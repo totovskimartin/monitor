@@ -1,57 +1,66 @@
 {% extends "base.html" %}
 
+{% block head %}
+{{ super() }}
+<style>
+    .toggle-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        min-width: 24px;
+        display: inline-block;
+    }
+
+    .form-check-input:checked ~ .toggle-label {
+        color: var(--bs-primary);
+    }
+
+    .form-check-input:not(:checked) ~ .toggle-label {
+        color: var(--bs-secondary);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1 class="display-5 fw-bold mb-4">Notification Settings</h1>
-        <p class="lead mb-4">Configure how you want to be notified about certificate and domain expiry alerts.</p>
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">Notification Settings</h1>
+            <p class="dashboard-subtitle">Configure how you want to be notified about certificate and domain expiry alerts.</p>
+        </div>
     </div>
-</div>
 
-<!-- Flash Messages -->
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        {% for category, message in messages %}
-            <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        {% endfor %}
-    {% endif %}
-{% endwith %}
-
-<div class="row">
-    <div class="col-12">
-        <div class="card mb-4">
-            <div class="card-body">
+    <div class="dashboard-main-content">
+        <div class="modern-card">
+            <div class="modern-card-body">
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle me-2"></i>
                     Configure the notification channels you want to use for monitoring alerts. Enable only the channels you need.
                 </div>
 
                 <!-- Notification Channels Accordion -->
-                <div class="accordion" id="notificationAccordion">
+                <div class="accordion" id="notificationAccordion" data-bs-parent="">
                     <!-- Email Notifications -->
                     <div class="accordion-item">
                         <h2 class="accordion-header">
-                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.email.enabled %}collapsed{% endif %}"
-                                    type="button" data-bs-toggle="collapse"
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
                                     data-bs-target="#emailCollapse"
-                                    aria-expanded="{% if notifications.email.enabled %}true{% else %}false{% endif %}"
+                                    aria-expanded="false"
                                     aria-controls="emailCollapse">
                                 <div class="d-flex align-items-center">
                                     <i class="bi bi-envelope me-2"></i>
                                     <span>Email Notifications</span>
-                                    <div class="form-check form-switch ms-2">
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
                                         <input class="form-check-input" type="checkbox" id="emailEnabled"
                                                {% if notifications.email.enabled %}checked{% endif %}
-                                               onchange="toggleNotificationSection('email', this.checked); event.stopPropagation();">
+                                               onchange="toggleNotificationSection('email', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.email.enabled else 'Off' }}</span>
                                     </div>
                                 </div>
                                 <div></div>
                             </button>
                         </h2>
-                        <div id="emailCollapse" class="accordion-collapse collapse {% if notifications.email.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                        <div id="emailCollapse" class="accordion-collapse collapse">
                             <div class="accordion-body">
                                 <form action="{{ url_for('save_notifications') }}" method="POST" id="emailForm">
                                     <input type="hidden" name="notification_type" value="email">
@@ -121,24 +130,25 @@
                     <!-- Microsoft Teams Notifications -->
                     <div class="accordion-item">
                         <h2 class="accordion-header">
-                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.teams.enabled %}collapsed{% endif %}"
-                                    type="button" data-bs-toggle="collapse"
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
                                     data-bs-target="#teamsCollapse"
-                                    aria-expanded="{% if notifications.teams.enabled %}true{% else %}false{% endif %}"
+                                    aria-expanded="false"
                                     aria-controls="teamsCollapse">
                                 <div class="d-flex align-items-center">
                                     <i class="bi bi-microsoft-teams me-2"></i>
                                     <span>Microsoft Teams</span>
-                                    <div class="form-check form-switch ms-2">
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
                                         <input class="form-check-input" type="checkbox" id="teamsEnabled"
                                                {% if notifications.teams.enabled %}checked{% endif %}
-                                               onchange="toggleNotificationSection('teams', this.checked); event.stopPropagation();">
+                                               onchange="toggleNotificationSection('teams', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.teams.enabled else 'Off' }}</span>
                                     </div>
                                 </div>
                                 <div></div>
                             </button>
                         </h2>
-                        <div id="teamsCollapse" class="accordion-collapse collapse {% if notifications.teams.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                        <div id="teamsCollapse" class="accordion-collapse collapse">
                             <div class="accordion-body">
                                 <form action="{{ url_for('save_notifications') }}" method="POST" id="teamsForm">
                                     <input type="hidden" name="notification_type" value="teams">
@@ -173,24 +183,25 @@
                     <!-- Slack Notifications -->
                     <div class="accordion-item">
                         <h2 class="accordion-header">
-                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.slack.enabled %}collapsed{% endif %}"
-                                    type="button" data-bs-toggle="collapse"
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
                                     data-bs-target="#slackCollapse"
-                                    aria-expanded="{% if notifications.slack.enabled %}true{% else %}false{% endif %}"
+                                    aria-expanded="false"
                                     aria-controls="slackCollapse">
                                 <div class="d-flex align-items-center">
                                     <i class="bi bi-slack me-2"></i>
                                     <span>Slack</span>
-                                    <div class="form-check form-switch ms-2">
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
                                         <input class="form-check-input" type="checkbox" id="slackEnabled"
                                                {% if notifications.slack.enabled %}checked{% endif %}
-                                               onchange="toggleNotificationSection('slack', this.checked); event.stopPropagation();">
+                                               onchange="toggleNotificationSection('slack', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.slack.enabled else 'Off' }}</span>
                                     </div>
                                 </div>
                                 <div></div>
                             </button>
                         </h2>
-                        <div id="slackCollapse" class="accordion-collapse collapse {% if notifications.slack.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                        <div id="slackCollapse" class="accordion-collapse collapse">
                             <div class="accordion-body">
                                 <form action="{{ url_for('save_notifications') }}" method="POST" id="slackForm">
                                     <input type="hidden" name="notification_type" value="slack">
@@ -235,24 +246,25 @@
                     <!-- Discord Notifications -->
                     <div class="accordion-item">
                         <h2 class="accordion-header">
-                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.discord.enabled %}collapsed{% endif %}"
-                                    type="button" data-bs-toggle="collapse"
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
                                     data-bs-target="#discordCollapse"
-                                    aria-expanded="{% if notifications.discord.enabled %}true{% else %}false{% endif %}"
+                                    aria-expanded="false"
                                     aria-controls="discordCollapse">
                                 <div class="d-flex align-items-center">
                                     <i class="bi bi-discord me-2"></i>
                                     <span>Discord</span>
-                                    <div class="form-check form-switch ms-2">
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
                                         <input class="form-check-input" type="checkbox" id="discordEnabled"
                                                {% if notifications.discord.enabled %}checked{% endif %}
-                                               onchange="toggleNotificationSection('discord', this.checked); event.stopPropagation();">
+                                               onchange="toggleNotificationSection('discord', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.discord.enabled else 'Off' }}</span>
                                     </div>
                                 </div>
                                 <div></div>
                             </button>
                         </h2>
-                        <div id="discordCollapse" class="accordion-collapse collapse {% if notifications.discord.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                        <div id="discordCollapse" class="accordion-collapse collapse">
                             <div class="accordion-body">
                                 <form action="{{ url_for('save_notifications') }}" method="POST" id="discordForm">
                                     <input type="hidden" name="notification_type" value="discord">
@@ -322,23 +334,36 @@
 </div>
 
 <script>
+    // This function will be called when a toggle switch is clicked
     function toggleNotificationSection(type, enabled) {
+        console.log(`Toggle ${type} to ${enabled}`);
+
         // Update the hidden input
         document.getElementById(type + 'EnabledInput').value = enabled ? 'true' : 'false';
 
         // Enable/disable form fields
         const form = document.getElementById(type + 'Form');
         const inputs = form.querySelectorAll('input:not([type="hidden"]), select, textarea, button');
-
         inputs.forEach(input => {
             input.disabled = !enabled;
         });
 
-        // Show/hide the accordion section
-        if (enabled) {
-            const collapseElement = document.getElementById(type + 'Collapse');
-            const accordion = bootstrap.Collapse.getInstance(collapseElement) || new bootstrap.Collapse(collapseElement, { toggle: false });
-            accordion.show();
+        // Update the toggle label
+        const toggleSwitch = document.getElementById(type + 'Enabled');
+        const toggleLabel = toggleSwitch.nextElementSibling;
+        if (toggleLabel && toggleLabel.classList.contains('toggle-label')) {
+            toggleLabel.textContent = enabled ? 'On' : 'Off';
+        }
+
+        // Get the collapse element
+        const collapseElement = document.getElementById(type + 'Collapse');
+
+        // If turning on and the section is collapsed, open it
+        // Otherwise, don't change the state
+        if (enabled && !collapseElement.classList.contains('show')) {
+            // We need to manually show the collapse without using Bootstrap's collapse
+            // to avoid the default accordion behavior
+            collapseElement.classList.add('show');
         }
     }
 
@@ -369,22 +394,47 @@
         modal.show();
     }
 
-    // Prevent toggle switches from toggling the accordion when clicked
     document.addEventListener('DOMContentLoaded', function() {
-        // Handle toggle switch clicks
-        const toggleSwitches = document.querySelectorAll('.form-check-input');
-        toggleSwitches.forEach(toggle => {
+        // Completely disable the accordion behavior for the toggle switches
+        document.querySelectorAll('.form-check-input').forEach(toggle => {
             toggle.addEventListener('click', function(e) {
-                // Stop the event from triggering the accordion toggle
                 e.stopPropagation();
             });
         });
 
-        // Also prevent clicks on the form-switch container from toggling the accordion
-        const formSwitches = document.querySelectorAll('.form-switch');
-        formSwitches.forEach(switchEl => {
+        // Prevent the form-switch container from toggling the accordion
+        document.querySelectorAll('.form-switch').forEach(switchEl => {
             switchEl.addEventListener('click', function(e) {
                 e.stopPropagation();
+            });
+        });
+
+        // Modify the accordion buttons to not toggle when the toggle switch is clicked
+        document.querySelectorAll('.accordion-button').forEach(button => {
+            // Remove the data-bs-toggle attribute to prevent Bootstrap's default behavior
+            button.setAttribute('data-original-toggle', button.getAttribute('data-bs-toggle'));
+            button.removeAttribute('data-bs-toggle');
+
+            // Add our own click handler
+            button.addEventListener('click', function(e) {
+                // Only toggle if the click didn't come from the toggle switch
+                if (!e.target.classList.contains('form-check-input') &&
+                    !e.target.closest('.form-switch')) {
+                    const targetId = this.getAttribute('data-bs-target');
+                    const targetElement = document.querySelector(targetId);
+
+                    if (targetElement) {
+                        if (targetElement.classList.contains('show')) {
+                            targetElement.classList.remove('show');
+                            this.classList.add('collapsed');
+                            this.setAttribute('aria-expanded', 'false');
+                        } else {
+                            targetElement.classList.add('show');
+                            this.classList.remove('collapsed');
+                            this.setAttribute('aria-expanded', 'true');
+                        }
+                    }
+                }
             });
         });
     });

@@ -37,6 +37,46 @@
             });
         }
     });
+
+    // Store user timezone for use in JavaScript
+    let userTimezone = "{{ user_timezone }}";
+    console.log("User timezone set to:", userTimezone);
+
+    // Function to format dates in the user's timezone
+    function formatDateInUserTimezone(timestamp, format) {
+        if (typeof luxon !== 'undefined') {
+            try {
+                // Convert timestamp to milliseconds if it's in seconds
+                if (timestamp < 10000000000) {
+                    timestamp = timestamp * 1000;
+                }
+
+                const dt = luxon.DateTime.fromMillis(timestamp).setZone(userTimezone);
+                return dt.toFormat(format);
+            } catch (e) {
+                console.error("Error formatting date:", e);
+                // Fallback to browser's date formatting
+                return new Date(timestamp).toLocaleString();
+            }
+        } else {
+            // Fallback if Luxon is not available
+            return new Date(timestamp).toLocaleString();
+        }
+    }
+
+    // Validate the timezone with Luxon
+    if (typeof luxon !== 'undefined') {
+        try {
+            // Try to create a DateTime with the timezone to validate it
+            const now = luxon.DateTime.now().setZone(userTimezone);
+            console.log("Timezone validation successful:", now.toString());
+        } catch (e) {
+            console.error("Invalid timezone:", userTimezone, e);
+            // Fall back to browser's local timezone
+            userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            console.log("Falling back to browser timezone:", userTimezone);
+        }
+    }
 </script>
 {% endblock %}
 
@@ -250,6 +290,9 @@
             <h2 class="modern-card-title">
                 <i class="bi bi-speedometer2"></i>
                 Response Time
+                <small class="text-muted ms-2" style="font-size: 0.75em; font-weight: normal;">
+                    <i class="bi bi-clock"></i> Timezone: {{ user_timezone }}
+                </small>
             </h2>
             <div class="header-actions">
                 <div class="btn-group timeframe-selector" role="group" aria-label="Timeframe selection">
@@ -304,7 +347,13 @@
                         <div class="detail-label">Expiry Date</div>
                         <div class="detail-value">
                             {% if domain.ssl_status.expiry_date %}
-                                {{ domain.ssl_status.expiry_date.strftime('%Y-%m-%d') }}
+                                {% if domain.ssl_status.expiry_date is string %}
+                                    {{ domain.ssl_status.expiry_date }}
+                                {% elif domain.ssl_status.expiry_date is not none %}
+                                    {{ domain.ssl_status.expiry_date.strftime('%Y-%m-%d %H:%M') }} ({{ user_timezone }})
+                                {% else %}
+                                    Unknown
+                                {% endif %}
                             {% else %}
                                 Unknown
                             {% endif %}
@@ -314,7 +363,7 @@
                         <div class="detail-label">Days Remaining</div>
                         <div class="detail-value status-with-indicator">
                             <div class="status-text">
-                                {% if domain.ssl_status.days_remaining >= 0 %}
+                                {% if domain.ssl_status.days_remaining is not none and domain.ssl_status.days_remaining >= 0 %}
                                     {{ domain.ssl_status.days_remaining }} days
                                 {% else %}
                                     Expired
@@ -374,7 +423,13 @@
                         <div class="detail-label">Expiry Date</div>
                         <div class="detail-value">
                             {% if domain.domain_status.expiry_date %}
-                                {{ domain.domain_status.expiry_date.strftime('%Y-%m-%d') }}
+                                {% if domain.domain_status.expiry_date is string %}
+                                    {{ domain.domain_status.expiry_date }}
+                                {% elif domain.domain_status.expiry_date is not none %}
+                                    {{ domain.domain_status.expiry_date.strftime('%Y-%m-%d %H:%M') }} ({{ user_timezone }})
+                                {% else %}
+                                    Unknown
+                                {% endif %}
                             {% else %}
                                 Unknown
                             {% endif %}
@@ -384,7 +439,7 @@
                         <div class="detail-label">Days Remaining</div>
                         <div class="detail-value status-with-indicator">
                             <div class="status-text">
-                                {% if domain.days_until_expiry >= 0 %}
+                                {% if domain.days_until_expiry is not none and domain.days_until_expiry >= 0 %}
                                     {{ domain.days_until_expiry }} days
                                 {% else %}
                                     Expired
@@ -528,12 +583,25 @@
                                         timestamp = numTimestamp;
                                     } else {
                                         // Try as ISO date string
-                                        const date = new Date(item.timestamp);
-                                        if (!isNaN(date.getTime())) {
-                                            timestamp = date.getTime();
+                                        // If we have an ISO string with 'Z' at the end, it's UTC
+                                        if (item.iso_time && typeof item.iso_time === 'string') {
+                                            // Use the ISO time string which is explicitly marked as UTC
+                                            const date = new Date(item.iso_time);
+                                            if (!isNaN(date.getTime())) {
+                                                timestamp = date.getTime();
+                                            } else {
+                                                console.error('Invalid ISO time format:', item.iso_time);
+                                                return; // Skip this item
+                                            }
                                         } else {
-                                            console.error('Invalid timestamp format:', item.timestamp);
-                                            return; // Skip this item
+                                            // Fallback to the timestamp string
+                                            const date = new Date(item.timestamp);
+                                            if (!isNaN(date.getTime())) {
+                                                timestamp = date.getTime();
+                                            } else {
+                                                console.error('Invalid timestamp format:', item.timestamp);
+                                                return; // Skip this item
+                                            }
                                         }
                                     }
                                 } else {
@@ -617,27 +685,59 @@
             chartData.sort((a, b) => a.x - b.x);
 
             // Process data for chart
-            chartData.forEach(point => {
-                responseTimeValues.push(point.y);
+            // Group data points into 30-minute intervals
+            const intervalData = {};
+            const intervalMs = 30 * 60 * 1000; // 30 minutes in milliseconds
 
-                // Format the timestamp for display
-                const date = new Date(point.x);
+            // Group data points by 30-minute intervals
+            chartData.forEach(point => {
+                // Round timestamp down to nearest 30-minute interval
+                const intervalTimestamp = Math.floor(point.x / intervalMs) * intervalMs;
+
+                if (!intervalData[intervalTimestamp]) {
+                    intervalData[intervalTimestamp] = {
+                        values: [],
+                        timestamp: intervalTimestamp
+                    };
+                }
+
+                intervalData[intervalTimestamp].values.push(point.y);
+            });
+
+            // Convert grouped data to arrays for chart
+            const intervalTimestamps = Object.keys(intervalData).map(Number).sort((a, b) => a - b);
+
+            intervalTimestamps.forEach(timestamp => {
+                const values = intervalData[timestamp].values;
+                // Calculate average response time for this interval
+                const avgResponseTime = values.reduce((sum, val) => sum + val, 0) / values.length;
+
+                responseTimeValues.push(avgResponseTime);
+
+                // Format the timestamp for display using user's timezone
                 let formattedDate;
 
-                if (currentTimeframe === '24') {
-                    // For 24 hours, show hour:minute
-                    formattedDate = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                } else if (currentTimeframe === '168') {
-                    // For 7 days, show day and hour
-                    formattedDate = date.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
-                                   ' ' + date.toLocaleTimeString([], { hour: '2-digit' });
-                } else {
-                    // For 30 days, show just the date
-                    formattedDate = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                try {
+                    // Use our helper function to format the date
+                    if (currentTimeframe === '24') {
+                        // For 24 hours, show hour:minute
+                        formattedDate = formatDateInUserTimezone(timestamp, 'hh:mm a');
+                    } else if (currentTimeframe === '168') {
+                        // For 7 days, show day and hour
+                        formattedDate = formatDateInUserTimezone(timestamp, 'LLL d, hh a');
+                    } else {
+                        // For 30 days, show just the date
+                        formattedDate = formatDateInUserTimezone(timestamp, 'LLL d');
+                    }
+                } catch (e) {
+                    console.error("Error formatting chart label date:", e);
+                    // Fallback to simple date display
+                    const date = new Date(timestamp);
+                    formattedDate = date.toLocaleString();
                 }
 
                 formattedLabels.push(formattedDate);
-                timestamps.push(point.x);
+                timestamps.push(timestamp);
             });
 
             // Create the chart with a simpler configuration
@@ -682,15 +782,41 @@
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return `Response Time: ${context.raw} ms`;
+                                    return `Average Response Time: ${context.raw.toFixed(2)} ms`;
                                 },
                                 title: function(context) {
                                     if (context[0]) {
                                         const index = context[0].dataIndex;
                                         const timestamp = timestamps[index];
                                         if (timestamp) {
-                                            const date = new Date(timestamp);
-                                            return date.toLocaleString();
+                                            try {
+                                                // Calculate end time (30 minutes later)
+                                                const endTimestamp = timestamp + 30 * 60 * 1000;
+
+                                                // Format date and times using our helper function
+                                                const dateStr = formatDateInUserTimezone(timestamp, 'LLL d, yyyy');
+                                                const startTime = formatDateInUserTimezone(timestamp, 'hh:mm a');
+                                                const endTime = formatDateInUserTimezone(endTimestamp, 'hh:mm a');
+
+                                                return `${dateStr} (${startTime} - ${endTime}) [${userTimezone}]`;
+                                            } catch (e) {
+                                                console.error("Error formatting tooltip date:", e);
+                                                // Fallback to simple date display
+                                                const date = new Date(timestamp);
+                                                return date.toLocaleString();
+                                            }
+                                        }
+                                    }
+                                    return '';
+                                },
+                                afterTitle: function(context) {
+                                    if (context[0]) {
+                                        const index = context[0].dataIndex;
+                                        const timestamp = timestamps[index];
+                                        const values = intervalData[timestamp]?.values;
+
+                                        if (values && values.length > 0) {
+                                            return `Data points: ${values.length}`;
                                         }
                                     }
                                     return '';

@@ -172,13 +172,48 @@
                 <table class="table table-hover modern-table">
                     <thead>
                         <tr>
-                            <th>Username</th>
-                            <th>Email</th>
-                            <th>Role</th>
-                            <th>Status</th>
+                            <th>
+                                <a href="{{ url_for('user_admin', sort='username', order='asc' if sort_by != 'username' or sort_order == 'desc' else 'desc') }}" class="text-decoration-none text-reset d-flex align-items-center">
+                                    Username
+                                    {% if sort_by == 'username' %}
+                                        <i class="bi bi-caret-{{ 'up' if sort_order == 'asc' else 'down' }}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="{{ url_for('user_admin', sort='email', order='asc' if sort_by != 'email' or sort_order == 'desc' else 'desc') }}" class="text-decoration-none text-reset d-flex align-items-center">
+                                    Email
+                                    {% if sort_by == 'email' %}
+                                        <i class="bi bi-caret-{{ 'up' if sort_order == 'asc' else 'down' }}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="{{ url_for('user_admin', sort='is_admin', order='asc' if sort_by != 'is_admin' or sort_order == 'desc' else 'desc') }}" class="text-decoration-none text-reset d-flex align-items-center">
+                                    Role
+                                    {% if sort_by == 'is_admin' %}
+                                        <i class="bi bi-caret-{{ 'up' if sort_order == 'asc' else 'down' }}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="{{ url_for('user_admin', sort='is_active', order='asc' if sort_by != 'is_active' or sort_order == 'desc' else 'desc') }}" class="text-decoration-none text-reset d-flex align-items-center">
+                                    Status
+                                    {% if sort_by == 'is_active' %}
+                                        <i class="bi bi-caret-{{ 'up' if sort_order == 'asc' else 'down' }}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
                             <th>Organizations</th>
                             <th>Last Login</th>
-                            <th>Created</th>
+                            <th>
+                                <a href="{{ url_for('user_admin', sort='created_at', order='asc' if sort_by != 'created_at' or sort_order == 'desc' else 'desc') }}" class="text-decoration-none text-reset d-flex align-items-center">
+                                    Created
+                                    {% if sort_by == 'created_at' %}
+                                        <i class="bi bi-caret-{{ 'up' if sort_order == 'asc' else 'down' }}-fill ms-1"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
                             <th class="text-center">Actions</th>
                         </tr>
                     </thead>

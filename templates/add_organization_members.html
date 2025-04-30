@@ -1,0 +1,777 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+    /* Modern card styling */
+    .card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px var(--shadow-color);
+        overflow: hidden;
+        background-color: var(--card-bg);
+        color: var(--text-color);
+    }
+
+    .card-header {
+        background-color: var(--card-bg);
+        border-bottom: 1px solid var(--border-color);
+        padding: 1.5rem;
+        color: var(--text-color);
+    }
+
+    .card-body {
+        padding: 1.5rem;
+        background-color: var(--card-bg);
+        color: var(--text-color);
+    }
+
+    /* User search styling */
+    .search-container {
+        position: relative;
+        margin-bottom: 1.5rem;
+    }
+
+    .search-input {
+        border-radius: 8px;
+        padding: 0.75rem 1rem 0.75rem 3rem;
+        font-size: 1rem;
+        border: 1px solid var(--border-color);
+        background-color: var(--bs-body-bg);
+        color: var(--text-color);
+        transition: all 0.2s ease;
+    }
+
+    .search-input:focus {
+        box-shadow: 0 0 0 3px rgba(var(--bs-primary-rgb), 0.15);
+        border-color: var(--bs-primary);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--bs-secondary);
+        font-size: 1.2rem;
+    }
+
+    /* User suggestions dropdown */
+    .user-suggestions {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: var(--bs-body-bg);
+        border-radius: 8px;
+        box-shadow: 0 4px 15px var(--shadow-color);
+        z-index: 1000;
+        max-height: 300px;
+        overflow-y: auto;
+        display: none;
+        margin-top: 0.5rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .user-suggestions.show {
+        display: block;
+    }
+
+    .suggestion-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid var(--border-color);
+        transition: background-color 0.15s ease;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .suggestion-item:last-child {
+        border-bottom: none;
+    }
+
+    .suggestion-item:hover {
+        background-color: rgba(var(--bs-primary-rgb), 0.05);
+    }
+
+    .suggestion-info {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .suggestion-name {
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .suggestion-email {
+        font-size: 0.85rem;
+        color: var(--bs-secondary);
+    }
+
+    .add-user-btn {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.8rem;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+    }
+
+    /* Selected users section */
+    .selected-users {
+        margin-top: 2rem;
+    }
+
+    .selected-users-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .selected-users-count {
+        font-size: 0.9rem;
+        color: var(--text-color);
+        background-color: var(--border-color);
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+    }
+
+    .selected-users-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .selected-user-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        background-color: var(--border-color);
+        border-radius: 8px;
+        margin-bottom: 0.75rem;
+        transition: all 0.2s ease;
+    }
+
+    .selected-user-item:hover {
+        background-color: var(--shadow-color);
+    }
+
+    .selected-user-info {
+        display: flex;
+        align-items: center;
+    }
+
+    .user-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background-color: var(--bs-primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 500;
+        margin-right: 0.75rem;
+    }
+
+    .selected-user-details {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .selected-user-name {
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .selected-user-email {
+        font-size: 0.85rem;
+        color: var(--bs-secondary);
+    }
+
+    .remove-user {
+        background: none;
+        border: none;
+        color: var(--bs-danger);
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 4px;
+        transition: all 0.15s ease;
+    }
+
+    .remove-user:hover {
+        background-color: rgba(var(--bs-danger-rgb), 0.1);
+    }
+
+    .admin-badge {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        background-color: var(--bs-danger);
+        color: white;
+        margin-left: 0.5rem;
+    }
+
+    /* Empty state */
+    .empty-state {
+        text-align: center;
+        padding: 2.5rem 0;
+        color: var(--bs-secondary);
+    }
+
+    .empty-state i {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    /* Role selector */
+    .role-selector {
+        margin-bottom: 2rem;
+    }
+
+    /* Form label styling */
+    .form-label {
+        color: var(--text-color);
+    }
+
+    .role-options {
+        display: flex;
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .role-option {
+        flex: 1;
+        border: 2px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+        margin: 0 0.5rem;
+        background-color: var(--card-bg);
+    }
+
+    .role-option:hover {
+        border-color: var(--bs-primary);
+        background-color: rgba(var(--bs-primary-rgb), 0.05);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px var(--shadow-color);
+    }
+
+    .role-option.selected {
+        border-color: var(--bs-primary);
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+        box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), 0.2);
+    }
+
+    .role-option input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .role-title {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .role-title i {
+        margin-right: 0.5rem;
+    }
+
+    .role-description {
+        font-size: 0.9rem;
+        color: var(--bs-secondary);
+    }
+
+    /* Submit button */
+    .submit-btn {
+        padding: 0.75rem 2rem;
+        font-weight: 500;
+    }
+
+    /* Loading state */
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(var(--bs-body-bg-rgb, 255, 255, 255), 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        border-radius: 8px;
+    }
+
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(var(--bs-primary-rgb), 0.1);
+        border-radius: 50%;
+        border-top-color: var(--bs-primary);
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">Add Members to Organization</h1>
+        <div>
+            <a href="{{ url_for('debug_add_organization_user', org_id=organization.id) }}" class="btn btn-outline-info me-2">
+                <i class="bi bi-bug"></i> Debug
+            </a>
+            <a href="{{ url_for('organization_users', org_id=organization.id) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Members
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">{{ organization.name }}</h5>
+            <span class="badge bg-primary">{{ users|length }} current members</span>
+        </div>
+        <div class="card-body">
+            <form id="addMembersForm" method="post" action="{{ url_for('add_organization_user', org_id=organization.id) }}">
+                <!-- Role Selection -->
+                <div class="role-selector">
+                    <label class="form-label">Role for new members</label>
+                    <div class="role-options">
+                        <div class="role-option selected" id="memberRoleOption">
+                            <input type="radio" name="role" id="memberRole" value="member" checked>
+                            <div class="role-title">
+                                <i class="bi bi-person"></i> Member
+                            </div>
+                            <div class="role-description">
+                                Can view and manage domains in this organization
+                            </div>
+                        </div>
+                        <div class="role-option" id="adminRoleOption">
+                            <input type="radio" name="role" id="adminRole" value="admin">
+                            <div class="role-title">
+                                <i class="bi bi-shield-lock"></i> Admin
+                            </div>
+                            <div class="role-description">
+                                Can manage organization settings and members
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Search -->
+                <div class="search-container">
+                    <i class="bi bi-search search-icon"></i>
+                    <input type="text" class="form-control search-input" id="userSearch"
+                           placeholder="Search for users by username or email..." autocomplete="off">
+
+                    <!-- User Suggestions Dropdown -->
+                    <div class="user-suggestions show" id="userSuggestions">
+                        <div class="suggestion-item">
+                            <div class="text-center py-2">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                Loading users...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Selected Users -->
+                <div class="selected-users">
+                    <div class="selected-users-header">
+                        <label class="form-label mb-0">Selected users</label>
+                        <span class="selected-users-count" id="selectedUsersCount">0 selected</span>
+                    </div>
+                    <div id="selectedUsersContainer">
+                        <div class="empty-state" id="emptyState">
+                            <i class="bi bi-people"></i>
+                            <p class="mb-1">No users selected yet</p>
+                            <p class="small">Search and select users above to add them to this organization</p>
+                        </div>
+                        <ul class="selected-users-list" id="selectedUsersList"></ul>
+                    </div>
+                </div>
+
+                <!-- Hidden inputs for selected users -->
+                <div id="selectedUsersInput"></div>
+
+                <div class="d-flex justify-content-end mt-4">
+                    <button type="submit" class="btn btn-primary submit-btn" id="submitButton" disabled>
+                        Add Members
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // DOM Elements
+        const userSearch = document.getElementById('userSearch');
+        const userSuggestions = document.getElementById('userSuggestions');
+        const selectedUsersList = document.getElementById('selectedUsersList');
+        const emptyState = document.getElementById('emptyState');
+        const submitButton = document.getElementById('submitButton');
+        const selectedUsersInput = document.getElementById('selectedUsersInput');
+        const addMembersForm = document.getElementById('addMembersForm');
+        const selectedUsersCount = document.getElementById('selectedUsersCount');
+        const memberRoleOption = document.getElementById('memberRoleOption');
+        const adminRoleOption = document.getElementById('adminRoleOption');
+        const memberRole = document.getElementById('memberRole');
+        const adminRole = document.getElementById('adminRole');
+
+        // Data
+        let selectedUsers = [];
+        let searchTimeout;
+
+        // Organization ID
+        const orgId = {{ organization.id }};
+
+        // Hardcoded available users for demonstration
+        let availableUsers = [
+            {
+                id: 1001,
+                username: 'testuser1',
+                email: 'testuser1@example.com',
+                is_admin: false
+            },
+            {
+                id: 1002,
+                username: 'testuser2',
+                email: 'testuser2@example.com',
+                is_admin: false
+            },
+            {
+                id: 1003,
+                username: 'adminuser',
+                email: 'admin@example.com',
+                is_admin: true
+            },
+            {
+                id: 1004,
+                username: 'developer',
+                email: 'dev@example.com',
+                is_admin: false
+            },
+            {
+                id: 1005,
+                username: 'manager',
+                email: 'manager@example.com',
+                is_admin: false
+            },
+            {
+                id: 1006,
+                username: 'support',
+                email: 'support@example.com',
+                is_admin: false
+            }
+        ];
+
+        console.log('Using hardcoded users:', availableUsers);
+
+        // Initialize - show all available users immediately
+        showAllAvailableUsers();
+
+        // Role selection
+        memberRoleOption.addEventListener('click', function() {
+            memberRole.checked = true;
+            memberRoleOption.classList.add('selected');
+            adminRoleOption.classList.remove('selected');
+            console.log('Member role selected');
+        });
+
+        adminRoleOption.addEventListener('click', function() {
+            adminRole.checked = true;
+            adminRoleOption.classList.add('selected');
+            memberRoleOption.classList.remove('selected');
+            console.log('Admin role selected');
+        });
+
+        // Make sure the initial state is correct
+        if (memberRole.checked) {
+            memberRoleOption.classList.add('selected');
+            adminRoleOption.classList.remove('selected');
+            console.log('Initial state: Member role is checked');
+        } else if (adminRole.checked) {
+            adminRoleOption.classList.add('selected');
+            memberRoleOption.classList.remove('selected');
+            console.log('Initial state: Admin role is checked');
+        }
+
+        // Event listeners
+        userSearch.addEventListener('input', function() {
+            const query = this.value.trim().toLowerCase();
+            console.log('Search input changed:', query);
+
+            if (query === '') {
+                showAllAvailableUsers();
+            } else {
+                // Filter users based on search query
+                const filteredUsers = availableUsers.filter(user => {
+                    // Skip users that are already selected
+                    if (selectedUsers.some(selected => selected.id === user.id)) {
+                        return false;
+                    }
+
+                    return user.username.toLowerCase().includes(query) ||
+                           user.email.toLowerCase().includes(query);
+                });
+
+                console.log('Filtered users:', filteredUsers.length);
+                renderSuggestions(filteredUsers);
+            }
+        });
+
+        userSearch.addEventListener('focus', function() {
+            // Show all available users when the search field is focused
+            showAllAvailableUsers();
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!userSearch.contains(e.target) && !userSuggestions.contains(e.target)) {
+                hideSuggestions();
+            }
+        });
+
+        // Form submission handler
+        addMembersForm.addEventListener('submit', function(e) {
+            if (selectedUsers.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one user to add');
+                return false;
+            }
+
+            // Show loading state
+            const loadingOverlay = document.createElement('div');
+            loadingOverlay.className = 'loading-overlay';
+            loadingOverlay.innerHTML = '<div class="spinner"></div>';
+            document.querySelector('.card-body').appendChild(loadingOverlay);
+
+            // Clear any existing inputs
+            selectedUsersInput.innerHTML = '';
+
+            // Add hidden inputs for each selected user
+            selectedUsers.forEach(user => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'selected_users[]';
+                input.value = user.id;
+                selectedUsersInput.appendChild(input);
+            });
+
+            return true;
+        });
+
+        // Functions
+        function showAllAvailableUsers() {
+            console.log('showAllAvailableUsers called');
+
+            if (!availableUsers || availableUsers.length === 0) {
+                console.log('No available users to show');
+                userSuggestions.innerHTML = `
+                    <div class="suggestion-item">
+                        <div class="text-center py-3 text-muted">No users available to add</div>
+                    </div>
+                `;
+                showSuggestions();
+                return;
+            }
+
+            // Filter out users that are already selected
+            const usersToShow = availableUsers.filter(user =>
+                !selectedUsers.some(selected => selected.id === user.id)
+            );
+
+            console.log('Users to show (after filtering):', usersToShow.length);
+
+            if (usersToShow.length === 0) {
+                userSuggestions.innerHTML = `
+                    <div class="suggestion-item">
+                        <div class="text-center py-3 text-muted">All available users have already been selected</div>
+                    </div>
+                `;
+                showSuggestions();
+                return;
+            }
+
+            renderSuggestions(usersToShow);
+        }
+
+        // These functions are no longer needed as we've simplified the search functionality
+
+        function renderSuggestions(users) {
+            console.log('Rendering suggestions for users:', users.length);
+            userSuggestions.innerHTML = '';
+
+            if (users.length === 0) {
+                userSuggestions.innerHTML = `
+                    <div class="suggestion-item">
+                        <div class="text-center py-3 text-muted">No matching users found</div>
+                    </div>
+                `;
+            } else {
+                console.log('User details:', users.map(u => `${u.username} (${u.id})`).join(', '));
+
+                // Create HTML for all users at once for better performance
+                let html = '';
+
+                users.forEach(user => {
+                    // Make sure we have a username
+                    const username = user.username || 'Unknown';
+                    const firstLetter = username.charAt(0).toUpperCase();
+                    const email = user.email || 'No email';
+                    const adminBadge = user.is_admin ? '<span class="admin-badge">Admin</span>' : '';
+
+                    html += `
+                        <div class="suggestion-item" data-id="${user.id}" data-username="${username}">
+                            <div class="suggestion-info">
+                                <div class="suggestion-name">
+                                    <div class="user-avatar me-2">${firstLetter}</div>
+                                    ${username}
+                                    ${adminBadge}
+                                </div>
+                                <div class="suggestion-email">${email}</div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary add-user-btn">
+                                <i class="bi bi-plus"></i> Add
+                            </button>
+                        </div>
+                    `;
+                });
+
+                userSuggestions.innerHTML = html;
+
+                // Add event listeners after adding HTML
+                document.querySelectorAll('.suggestion-item').forEach(item => {
+                    const userId = parseInt(item.dataset.id);
+                    const username = item.dataset.username;
+                    const user = users.find(u => u.id === userId);
+
+                    if (!user) return;
+
+                    const addButton = item.querySelector('.add-user-btn');
+
+                    addButton.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        console.log('Add button clicked for user:', username);
+                        addUserToSelected(user);
+                        userSearch.value = '';
+                        hideSuggestions();
+                        userSearch.focus();
+                    });
+
+                    item.addEventListener('click', () => {
+                        console.log('User item clicked:', username);
+                        addUserToSelected(user);
+                        userSearch.value = '';
+                        hideSuggestions();
+                        userSearch.focus();
+                    });
+                });
+            }
+
+            showSuggestions();
+        }
+
+        function showSuggestions() {
+            userSuggestions.classList.add('show');
+        }
+
+        function hideSuggestions() {
+            userSuggestions.classList.remove('show');
+        }
+
+        function addUserToSelected(user) {
+            // Check if user is already selected
+            if (selectedUsers.some(selected => selected.id === user.id)) {
+                return;
+            }
+
+            // Add user to selected users array
+            selectedUsers.push(user);
+
+            // Update UI
+            updateSelectedUsersList();
+        }
+
+        function removeUserFromSelected(userId) {
+            // Remove user from selected users array
+            selectedUsers = selectedUsers.filter(user => user.id !== userId);
+
+            // Update UI
+            updateSelectedUsersList();
+        }
+
+        function updateSelectedUsersList() {
+            // Update selected users count
+            selectedUsersCount.textContent = `${selectedUsers.length} selected`;
+
+            if (selectedUsers.length === 0) {
+                emptyState.style.display = 'block';
+                selectedUsersList.style.display = 'none';
+                submitButton.disabled = true;
+            } else {
+                emptyState.style.display = 'none';
+                selectedUsersList.style.display = 'block';
+                submitButton.disabled = false;
+
+                // Clear and rebuild the list
+                selectedUsersList.innerHTML = '';
+
+                selectedUsers.forEach(user => {
+                    const item = document.createElement('li');
+                    item.className = 'selected-user-item';
+
+                    const firstLetter = user.username.charAt(0).toUpperCase();
+
+                    item.innerHTML = `
+                        <div class="selected-user-info">
+                            <div class="user-avatar">${firstLetter}</div>
+                            <div class="selected-user-details">
+                                <div class="selected-user-name">
+                                    ${user.username}
+                                    ${user.is_admin ? '<span class="admin-badge">Admin</span>' : ''}
+                                </div>
+                                <div class="selected-user-email">${user.email}</div>
+                            </div>
+                        </div>
+                        <button type="button" class="remove-user" title="Remove user">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    `;
+
+                    const removeButton = item.querySelector('.remove-user');
+                    removeButton.addEventListener('click', function() {
+                        removeUserFromSelected(user.id);
+                    });
+
+                    selectedUsersList.appendChild(item);
+                });
+            }
+        }
+    });
+</script>
+{% endblock %}

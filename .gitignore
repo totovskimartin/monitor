@@ -5,8 +5,6 @@ __pycache__/
 *.so
 .Python
 env/
-venv/
-.env
 build/
 develop-eggs/
 dist/
@@ -18,31 +16,34 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 
-# Logs
-logs
-*.log
-npm-debug.log*
-.pnpm-debug.log*
+# Virtual Environment
+venv/
+ENV/
 
-# IDEs and editors
+# Database
+*.db
+*.sqlite3
+
+# Environment variables
+.env
+.env.local
+
+# IDE
 .idea/
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.sublime-workspace
-.project
-.classpath
-.c9/
-*.launch
-.settings/
+.vscode/
+*.swp
+*.swo
 
-# OS
-.DS_Store
-Thumbs.db
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Data directory
+/data/

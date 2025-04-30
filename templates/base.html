@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-modern.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/domain-details.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/spacing.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/timezone-selector.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {% block head_extra %}{% endblock %}
 </head>
@@ -242,7 +244,7 @@
 
             <!-- Main Content -->
             <main class="main-content">
-                <div class="container-fluid">
+                <div class="container-fluid pt-2 pb-4 px-0">
                     <!-- Modern Flash Messages -->
                     {% with messages = get_flashed_messages(with_categories=true) %}
                         {% if messages %}
@@ -307,6 +309,10 @@
 
     {% if request.endpoint in ['reports', 'generate_report', 'export_report'] %}
     <script src="{{ url_for('static', filename='js/reports.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint == 'app_settings' %}
+    <script src="{{ url_for('static', filename='js/timezone-selector.js') }}"></script>
     {% endif %}
 
     <!-- Toast for copy to clipboard -->

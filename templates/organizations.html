@@ -1,30 +1,35 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container py-3">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3">Organizations</h1>
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">Organizations</h1>
+            <p class="dashboard-subtitle">Manage your organizations and their members</p>
+        </div>
         {% if user.is_admin %}
-        <a href="{{ url_for('create_organization') }}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> Create Organization
-        </a>
+        <div class="dashboard-actions">
+            <a href="{{ url_for('create_organization') }}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Create Organization
+            </a>
+        </div>
         {% endif %}
     </div>
 
-    <div class="card">
-        <div class="card-body">
-            {% if organizations %}
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Created</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+    <div class="dashboard-main-content">
+        <div class="modern-card">
+            <div class="modern-card-body">
+                {% if organizations %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
                         {% for org in organizations %}
                         <tr>
                             <td>
@@ -39,7 +44,7 @@
                                 </div>
                             </td>
                             <td>{{ org.description or 'No description' }}</td>
-                            <td>{{ org.created_at }}</td>
+                            <td>{{ org.created_at|datetime }}</td>
                             <td>
                                 <div class="action-buttons">
                                     {% if user.current_organization and user.current_organization.id != org.id %}
@@ -53,14 +58,12 @@
                                         <i class="bi bi-pencil"></i>
                                     </a>
 
-                                    {% if org.id != 1 %}
                                     <button type="button" class="action-btn" data-action="delete"
                                             data-bs-toggle="modal"
                                             data-bs-target="#deleteOrgModal{{ org.id }}"
                                             title="Delete organization">
                                         <i class="bi bi-trash"></i>
                                     </button>
-                                    {% endif %}
                                     {% endif %}
                                 </div>
 
@@ -90,17 +93,20 @@
                         {% endfor %}
                     </tbody>
                 </table>
-            </div>
-            {% else %}
-            <div class="text-center py-4">
-                <p class="mb-0">No organizations found.</p>
-                {% if user.is_admin %}
-                <a href="{{ url_for('create_organization') }}" class="btn btn-primary mt-3">
-                    <i class="bi bi-plus-lg"></i> Create Organization
-                </a>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="bi bi-building"></i>
+                    </div>
+                    <p>No organizations found.</p>
+                    {% if user.is_admin %}
+                    <a href="{{ url_for('create_organization') }}" class="btn btn-primary">
+                        <i class="bi bi-plus-lg"></i> Create Organization
+                    </a>
+                    {% endif %}
+                </div>
                 {% endif %}
             </div>
-            {% endif %}
         </div>
     </div>
 </div>

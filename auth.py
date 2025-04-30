@@ -189,35 +189,60 @@ def create_default_admin():
     Returns:
         bool: True if admin was created, False otherwise
     """
-    # Check if any users exist
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) as count FROM users")
-        result = cursor.fetchone()
+    try:
+        # Check if any users exist
+        users = db.get_all_users()
+        if users and len(users) > 0:
+            # Check if admin user exists
+            admin_user = db.get_user_by_username(DEFAULT_ADMIN_USERNAME)
+            if admin_user:
+                print(f"Admin user already exists with username: {DEFAULT_ADMIN_USERNAME}")
+                return False
 
-        if result and result['count'] > 0:
-            return False
+            # If there are users but no admin, create the admin user
+            print("Users exist but no admin user found. Creating admin user...")
+        else:
+            print("No users found. Creating admin user...")
 
-    # Hash the default password
-    password_hash, salt = hash_password(DEFAULT_ADMIN_PASSWORD)
+        # Hash the default password
+        password_hash, salt = hash_password(DEFAULT_ADMIN_PASSWORD)
 
-    # Store the password hash and salt
-    combined_hash = f"{password_hash}:{salt}"
+        # Store the password hash and salt
+        combined_hash = f"{password_hash}:{salt}"
 
-    # Create the admin user
-    user_id = db.create_user(
-        username=DEFAULT_ADMIN_USERNAME,
-        email=DEFAULT_ADMIN_EMAIL,
-        password_hash=combined_hash,
-        is_admin=True
-    )
+        # Create the admin user
+        user_id = db.create_user(
+            username=DEFAULT_ADMIN_USERNAME,
+            email=DEFAULT_ADMIN_EMAIL,
+            password_hash=combined_hash,
+            is_admin=True
+        )
 
-    if user_id:
-        # Add admin to default organization with admin role
-        db.add_user_to_organization(user_id, 1, 'admin')
-        return True
+        if user_id:
+            print(f"Admin user created with ID: {user_id}")
 
-    return False
+            # Create default organization if it doesn't exist
+            default_org = db.get_organization_by_name("Default")
+            if not default_org:
+                org_id = db.create_organization("Default", "Default organization")
+                print(f"Default organization created with ID: {org_id}")
+            else:
+                org_id = default_org['id']
+                print(f"Default organization already exists with ID: {org_id}")
+
+            # Add admin to default organization with admin role
+            db.add_user_to_organization(user_id, org_id, 'admin')
+            print(f"Admin user added to default organization with role: admin")
+            return True
+        else:
+            print("Failed to create admin user")
+
+        return False
+    except Exception as e:
+        print(f"Error creating default admin: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def organization_admin_required(f):
     """

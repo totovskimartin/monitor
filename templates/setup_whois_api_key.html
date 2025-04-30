@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Setup WHOIS API Key - Certifly{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm border-0 rounded-3">
+                <div class="card-body p-4">
+                    <div class="text-center mb-4">
+                        <h1 class="h3 mb-3">Setup WHOIS API Key</h1>
+                        <p class="text-muted">
+                            To monitor domain expiration dates, Certifly needs a WHOIS API key.
+                            You can get a free API key from <a href="https://whoisapi.whoisxmlapi.com/signup" target="_blank">WhoisXML API</a>.
+                        </p>
+                    </div>
+
+                    <form method="POST" action="{{ url_for('setup_whois_api_key') }}">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                        
+                        <div class="mb-4">
+                            <label for="whois_api_key" class="form-label">WHOIS API Key</label>
+                            <input type="text" class="form-control" id="whois_api_key" name="whois_api_key" placeholder="Enter your WHOIS API key">
+                            <div class="form-text">
+                                This key will be used to fetch domain expiration information.
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Save API Key</button>
+                            <button type="submit" class="btn btn-outline-secondary" name="skip" value="true">Skip for Now</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

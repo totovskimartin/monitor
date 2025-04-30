@@ -1,8 +1,6 @@
-flask
-waitress
-flask-compress
-# Add any other dependencies your app needs, such as:
-# flask-login
-# sqlalchemy
-# requests
-# etc.
+Flask>=2.0.0
+SQLAlchemy>=1.4.0
+python-dotenv>=0.19.0
+cryptography>=3.4.0
+requests>=2.26.0
+pyOpenSSL>=20.0.1

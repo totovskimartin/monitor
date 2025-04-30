@@ -1,12 +1,8 @@
 #!/bin/bash
+set -e
 
-# Set the data directory for persistent storage
-# You can customize this path as needed
-export CERT_MONITOR_DATA_DIR="$HOME/.cert-monitor"
+# Initialize the database if it doesn't exist
+python -c "from database import init_db; init_db()"
 
-# Create the data directory if it doesn't exist
-mkdir -p "$CERT_MONITOR_DATA_DIR"
-echo "Using persistent storage at: $CERT_MONITOR_DATA_DIR"
-
-# Run the Flask application
-python3 app.py
+# Start the Flask application
+exec python -m flask run --host=0.0.0.0

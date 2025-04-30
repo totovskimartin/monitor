@@ -1,150 +1,146 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1 class="display-5 fw-bold mb-4">App Settings</h1>
-        <p class="lead mb-4">Configure general application settings for Certifly.</p>
-    </div>
-</div>
-
-<!-- Flash Messages -->
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        {% for category, message in messages %}
-            <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        {% endfor %}
-    {% endif %}
-{% endwith %}
-
-<div class="row">
-    <div class="col-lg-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Certificate Monitoring Settings</h5>
-            </div>
-            <div class="card-body">
-                <form action="{{ url_for('app_settings') }}" method="POST">
-                    <input type="hidden" name="form_type" value="monitoring_settings">
-
-                    <div class="mb-3">
-                        <label for="warning_threshold" class="form-label">Warning Threshold (days)</label>
-                        <input type="number" class="form-control" id="warning_threshold" name="warning_threshold"
-                               value="{{ settings.warning_threshold_days }}" min="1" max="90" required>
-                        <div class="form-text">Certificates expiring within this many days will be marked with a warning status.</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="auto_refresh_enabled" name="auto_refresh_enabled"
-                                  {% if settings.auto_refresh_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="auto_refresh_enabled">Enable Auto-Refresh by Default</label>
-                        </div>
-                        <div class="form-text">When enabled, the dashboard will automatically refresh at the specified interval.</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="auto_refresh_interval" class="form-label">Default Auto-Refresh Interval (minutes)</label>
-                        <select class="form-select" id="auto_refresh_interval" name="auto_refresh_interval">
-                            <option value="1" {% if settings.auto_refresh_interval == 1 %}selected{% endif %}>1 minute</option>
-                            <option value="5" {% if settings.auto_refresh_interval == 5 %}selected{% endif %}>5 minutes</option>
-                            <option value="15" {% if settings.auto_refresh_interval == 15 %}selected{% endif %}>15 minutes</option>
-                            <option value="30" {% if settings.auto_refresh_interval == 30 %}selected{% endif %}>30 minutes</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="whois_api_key" class="form-label">WHOIS API Key</label>
-                        <input type="password" class="form-control" id="whois_api_key" name="whois_api_key"
-                               value="{{ settings.whois_api_key|default('') }}">
-                        <div class="form-text">API key for WHOIS lookups (required for domain expiry monitoring). Get a key from <a href="https://whoisxmlapi.com/" target="_blank">WhoisXML API</a>.</div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-save me-1"></i> Save Settings
-                    </button>
-                </form>
-            </div>
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">App Settings</h1>
+            <p class="dashboard-subtitle">Configure general application settings for Certifly.</p>
         </div>
     </div>
 
-    <div class="col-lg-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Backup and Restore</h5>
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    <a href="{{ url_for('backup_config') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-download me-1"></i> Download Backup
-                    </a>
+    <div class="dashboard-main-content">
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Certificate Monitoring Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <form action="{{ url_for('app_settings') }}" method="POST">
+                            <input type="hidden" name="form_type" value="monitoring_settings">
 
-                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#restoreModal">
-                        <i class="bi bi-upload me-1"></i> Restore from Backup
-                    </button>
+                            <div class="mb-3">
+                                <label for="warning_threshold" class="form-label">Warning Threshold (days)</label>
+                                <input type="number" class="form-control" id="warning_threshold" name="warning_threshold"
+                                       value="{{ settings.warning_threshold_days }}" min="1" max="90" required>
+                                <div class="form-text">Certificates expiring within this many days will be marked with a warning status.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="timezone-search" class="form-label">Timezone</label>
+                                <div class="timezone-search-container">
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                        <input type="text" class="form-control" id="timezone-search" placeholder="Search for your city or timezone...">
+                                    </div>
+                                    <div class="timezone-results" id="timezone-results">
+                                        <!-- Search results will appear here -->
+                                    </div>
+                                    <div class="selected-timezone mt-2 p-2 border rounded bg-light">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span>Selected: <strong id="selected-timezone-name">{{ settings.timezone_display|default('UTC (+00:00)') }}</strong></span>
+                                            <span class="current-time">Current time: <strong id="current-time-preview">--:--</strong></span>
+                                        </div>
+                                        <input type="hidden" id="timezone" name="timezone" value="{{ settings.timezone|default('UTC') }}">
+                                    </div>
+                                </div>
+                                <div class="form-text">All timestamps in the application will be displayed in this timezone.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="whois_api_key" class="form-label">
+                                    WHOIS API Key
+                                    {% if current_org %}
+                                    <span class="badge bg-info ms-2">For {{ current_org.name }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary ms-2">Global</span>
+                                    {% endif %}
+                                </label>
+                                <input type="password" class="form-control" id="whois_api_key" name="whois_api_key"
+                                       value="{{ settings.whois_api_key|default('') }}">
+                                <div class="form-text">
+                                    {% if current_org %}
+                                    API key for WHOIS lookups for the {{ current_org.name }} organization. This key will only be used for domains in this organization.
+                                    {% else %}
+                                    API key for WHOIS lookups (global setting). Get a key from <a href="https://whoisxmlapi.com/" target="_blank">WhoisXML API</a>.
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- WHOIS API Information -->
+                            <div class="mb-4">
+                                <div class="alert alert-info">
+                                    <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>How to get a WHOIS API key:</h6>
+                                    <ol class="mb-0">
+                                        <li>Sign up for a free account at <a href="https://whoisxmlapi.com/" target="_blank">WhoisXML API</a></li>
+                                        <li>After registration, go to your dashboard</li>
+                                        <li>Find your API key in the account section</li>
+                                        <li>Copy and paste the key into the WHOIS API Key field above</li>
+                                    </ol>
+                                </div>
+
+                                <div class="d-grid gap-2 mt-3">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <a href="{{ url_for('clear_whois_cache') }}" class="btn btn-outline-secondary w-100">
+                                                <i class="bi bi-trash me-1"></i> Clear WHOIS Cache
+                                            </a>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <a href="{{ url_for('test_whois_api') }}" class="btn btn-outline-primary w-100">
+                                                <i class="bi bi-check-circle me-1"></i> Test WHOIS API Key
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <small class="text-muted mt-1">Use these buttons to troubleshoot domain expiry status issues</small>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save me-1"></i> Save Settings
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
-        </div>
 
-
-
-
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="card-title mb-0">WHOIS API Information</h5>
-            </div>
-            <div class="card-body">
-                <p>Domain expiry monitoring requires a WHOIS API key to fetch domain registration information.</p>
-
-                <div class="alert alert-info">
-                    <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>How to get a WHOIS API key:</h6>
-                    <ol class="mb-0">
-                        <li>Sign up for a free account at <a href="https://whoisxmlapi.com/" target="_blank">WhoisXML API</a></li>
-                        <li>After registration, go to your dashboard</li>
-                        <li>Find your API key in the account section</li>
-                        <li>Copy and paste the key into the WHOIS API Key field above</li>
-                    </ol>
-                </div>
-
-                <div class="d-grid gap-2 mt-3">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <a href="{{ url_for('clear_whois_cache') }}" class="btn btn-outline-secondary w-100">
-                                <i class="bi bi-trash me-1"></i> Clear WHOIS & Domain Expiry Caches
+            <div class="col-lg-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Backup and Restore</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <a href="{{ url_for('backup_config') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-download me-1"></i> Download Backup
                             </a>
-                        </div>
-                        <div class="col-md-6">
-                            <a href="{{ url_for('test_whois_api') }}" class="btn btn-outline-primary w-100">
-                                <i class="bi bi-check-circle me-1"></i> Test WHOIS API Key
-                            </a>
-                        </div>
-                    </div>
-                    <small class="text-muted mt-1">Use these buttons to troubleshoot domain expiry status issues</small>
-                </div>
-            </div>
-        </div>
 
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">About Certifly</h5>
-            </div>
-            <div class="card-body">
-                <p>Certifly is a modern SSL certificate monitoring tool that helps you keep track of your certificates and avoid unexpected expirations.</p>
-
-                <div class="d-flex align-items-center mb-3">
-                    <div class="me-3">
-                        <img src="{{ url_for('static', filename='img/favicon.svg') }}" alt="Certifly Logo" width="48" height="48">
-                    </div>
-                    <div>
-                        <h5 class="mb-0">Certifly</h5>
-                        <p class="text-muted mb-0">Version 1.0.0</p>
+                            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#restoreModal">
+                                <i class="bi bi-upload me-1"></i> Restore from Backup
+                            </button>
+                        </div>
                     </div>
                 </div>
 
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">About Certifly</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Certifly is a modern SSL certificate monitoring tool that helps you keep track of your certificates and avoid unexpected expirations.</p>
 
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <img src="{{ url_for('static', filename='img/favicon.svg') }}" alt="Certifly Logo" width="48" height="48">
+                            </div>
+                            <div>
+                                <h5 class="mb-0">Certifly</h5>
+                                <p class="text-muted mb-0">Version 1.0.0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

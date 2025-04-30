@@ -1,50 +1,51 @@
 # Certificates Web Application
 
-Web application for managing certificates.
+A web application for monitoring SSL certificates and domain health.
 
-## Getting Started
+## Requirements
 
-### Prerequisites
-- Python 3.9+
-- Docker (optional)
+- Docker
+- Docker Compose
 
-### Local Development
-1. Create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+## Quick Start
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd certificates-web
+   ```
+
+2. Start the application:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. Access the application at http://localhost:5000
+
+## Development
+
+1. Create a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
 2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-3. Run the application:
-```bash
-./run.sh
-```
+3. Set up environment variables:
+   ```bash
+   cp .env.example .env
+   ```
 
-### Docker Deployment
-1. Build the container:
-```bash
-docker build -t certificates-web .
-```
+4. Run the application:
+   ```bash
+   python -m flask run
+   ```
 
-2. Run the container:
-```bash
-docker run -d -p 5000:5000 -v certificates_data:/data --name certificates-web certificates-web
-```
+## Environment Variables
 
-## Configuration
-Configure the application using environment variables:
-- `FLASK_ENV`: Set to 'production' for production environment
+- `FLASK_ENV`: Set to `production` or `development`
 - `CERT_MONITOR_DATA_DIR`: Directory for storing application data
-
-## Contributing
-1. Create a new branch for your feature
-2. Make your changes
-3. Submit a merge request
-
-## License
-[Your License Here]

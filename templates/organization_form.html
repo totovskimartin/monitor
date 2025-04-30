@@ -1,30 +1,36 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container py-4">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h1 class="h4 mb-0">{{ title }}</h1>
-                </div>
-                <div class="card-body">
-                    <form method="post" action="{{ url_for('create_organization') if title == 'Create Organization' else url_for('edit_organization', org_id=organization.id) }}">
-                        <div class="mb-3">
-                            <label for="name" class="form-label">Organization Name</label>
-                            <input type="text" class="form-control" id="name" name="name" value="{{ organization.name if organization else '' }}" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="description" class="form-label">Description</label>
-                            <textarea class="form-control" id="description" name="description" rows="3">{{ organization.description if organization else '' }}</textarea>
-                            <div class="form-text">Optional description of the organization.</div>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <a href="{{ url_for('organizations') }}" class="btn btn-secondary">Cancel</a>
-                            <button type="submit" class="btn btn-primary">{{ 'Update' if organization else 'Create' }}</button>
-                        </div>
-                    </form>
-                </div>
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">{{ title }}</h1>
+            <p class="dashboard-subtitle">Enter organization details below</p>
+        </div>
+        <div class="dashboard-actions">
+            <a href="{{ url_for('organizations') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Organizations
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-main-content">
+        <div class="modern-card">
+            <div class="modern-card-body">
+                <form method="post" action="{{ url_for('create_organization') if title == 'Create Organization' else url_for('edit_organization', org_id=organization.id) }}">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Organization Name</label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ organization.name if organization else '' }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3">{{ organization.description if organization else '' }}</textarea>
+                        <div class="form-text">Optional description of the organization.</div>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary">{{ 'Update' if organization else 'Create' }}</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
