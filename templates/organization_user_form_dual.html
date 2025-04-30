@@ -1,0 +1,646 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<!-- Cache buster: {{ cache_buster|default('no_cache_buster') }} -->
+<style>
+    .dual-list-box {
+        display: flex;
+        margin-bottom: 20px;
+    }
+
+    .list-group {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        overflow: hidden;
+        flex: 1;
+        max-width: 100%;
+        height: 300px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .list-group-header {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .list-group-search {
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .list-group-items {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+    }
+
+    .list-group-item {
+        padding: 8px 10px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        align-items: center;
+    }
+
+    .list-group-item:last-child {
+        border-bottom: none;
+    }
+
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
+
+    .list-group-item.active {
+        background-color: #e9ecef;
+    }
+
+    .list-group-item input[type="checkbox"] {
+        margin-right: 10px;
+    }
+
+    .list-group-item .user-info {
+        flex: 1;
+    }
+
+    .list-group-item .user-name {
+        font-weight: 500;
+    }
+
+    .list-group-item .user-email {
+        font-size: 12px;
+        color: #6c757d;
+    }
+
+    .list-group-item .user-admin-badge {
+        font-size: 10px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        background-color: #dc3545;
+        color: white;
+        margin-left: 5px;
+    }
+
+    .list-controls {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 15px;
+    }
+
+    .list-controls button {
+        margin: 5px 0;
+    }
+
+    .empty-list {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #6c757d;
+        padding: 20px;
+        text-align: center;
+    }
+
+    .empty-list i {
+        font-size: 24px;
+        margin-bottom: 10px;
+        opacity: 0.5;
+    }
+
+    .list-instructions {
+        padding: 10px;
+        font-size: 13px;
+        color: #6c757d;
+        text-align: center;
+        border-top: 1px solid #ddd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h1 class="h4 mb-0">{{ title }} - New Dual List Interface</h1>
+                    <span class="badge bg-primary">{{ organization.name }}</span>
+                </div>
+                <div class="card-body">
+                    <form id="addUsersForm" method="post" action="{{ url_for('add_organization_user', org_id=organization.id) }}">
+                        <div class="mb-3">
+                            <label for="role" class="form-label">Role for new members</label>
+                            <select class="form-select" id="role" name="role">
+                                <option value="member">Member</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <div class="form-text">
+                                <strong>Member:</strong> Can view and manage domains within the organization.<br>
+                                <strong>Admin:</strong> Can manage organization settings, users, and domains.
+                            </div>
+                        </div>
+
+                        <div class="dual-list-box">
+                            <!-- Available Users List -->
+                            <div class="list-group">
+                                <div class="list-group-header">
+                                    <span>Available Users</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllAvailable">All</button>
+                                </div>
+                                <div class="list-group-search">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="availableSearch" placeholder="Search...">
+                                        <button class="btn btn-outline-secondary" type="button" id="clearAvailableSearch">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="list-group-items" id="availableUsers">
+                                    <div class="empty-list">
+                                        <i class="bi bi-people"></i>
+                                        <p>Loading available users...</p>
+                                    </div>
+                                </div>
+                                <div class="list-instructions">
+                                    Select users from the left to add to this organization's membership
+                                </div>
+                            </div>
+
+                            <!-- Transfer Buttons -->
+                            <div class="list-controls">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="addToSelected" disabled>
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="removeFromSelected" disabled>
+                                    <i class="bi bi-chevron-left"></i>
+                                </button>
+                            </div>
+
+                            <!-- Selected Users List -->
+                            <div class="list-group">
+                                <div class="list-group-header">
+                                    <span>Users to Add</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllSelected">All</button>
+                                </div>
+                                <div class="list-group-search">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="selectedSearch" placeholder="Search...">
+                                        <button class="btn btn-outline-secondary" type="button" id="clearSelectedSearch">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="list-group-items" id="selectedUsers">
+                                    <div class="empty-list">
+                                        <i class="bi bi-person-plus"></i>
+                                        <p>No users selected</p>
+                                    </div>
+                                </div>
+                                <div class="list-instructions">
+                                    These users will be added to the organization
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hidden input to store selected user IDs -->
+                        <div id="selectedUsersInput"></div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('organization_users', org_id=organization.id) }}" class="btn btn-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary" id="submitButton" disabled>Add Selected Members</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Elements
+        const availableUsersList = document.getElementById('availableUsers');
+        const selectedUsersList = document.getElementById('selectedUsers');
+        const availableSearch = document.getElementById('availableSearch');
+        const selectedSearch = document.getElementById('selectedSearch');
+        const clearAvailableSearch = document.getElementById('clearAvailableSearch');
+        const clearSelectedSearch = document.getElementById('clearSelectedSearch');
+        const addButton = document.getElementById('addToSelected');
+        const removeButton = document.getElementById('removeFromSelected');
+        const selectAllAvailableButton = document.getElementById('selectAllAvailable');
+        const selectAllSelectedButton = document.getElementById('selectAllSelected');
+        const submitButton = document.getElementById('submitButton');
+        const selectedUsersInput = document.getElementById('selectedUsersInput');
+        const addUsersForm = document.getElementById('addUsersForm');
+
+        // Data
+        let availableUsers = [];
+        let selectedUsers = [];
+        let availableSelectedItems = [];
+        let selectedSelectedItems = [];
+
+        // Organization ID
+        const orgId = {{ org_id }};
+
+        // Log organization ID for debugging
+        console.log('Organization ID:', orgId);
+
+        // Fetch available users
+        fetchAvailableUsers();
+
+        // Event listeners
+        availableSearch.addEventListener('input', filterAvailableUsers);
+        selectedSearch.addEventListener('input', filterSelectedUsers);
+        clearAvailableSearch.addEventListener('click', clearAvailableSearchField);
+        clearSelectedSearch.addEventListener('click', clearSelectedSearchField);
+        addButton.addEventListener('click', addSelectedUsers);
+        removeButton.addEventListener('click', removeSelectedUsers);
+        selectAllAvailableButton.addEventListener('click', toggleSelectAllAvailable);
+        selectAllSelectedButton.addEventListener('click', toggleSelectAllSelected);
+
+        // Add form submit handler
+        addUsersForm.addEventListener('submit', function(e) {
+            if (selectedUsers.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one user to add');
+                return false;
+            }
+
+            // Clear any existing inputs
+            selectedUsersInput.innerHTML = '';
+
+            // Add hidden inputs for each selected user
+            selectedUsers.forEach(user => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'selected_users[]';
+                input.value = user.id;
+                selectedUsersInput.appendChild(input);
+            });
+
+            return true;
+        });
+
+        // Functions
+        function fetchAvailableUsers() {
+            console.log('Fetching available users from:', `/api/get_available_users?org_id=${orgId}`);
+
+            fetch(`/api/get_available_users?org_id=${orgId}`)
+                .then(response => {
+                    console.log('API response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('API response data:', data);
+                    if (data.success) {
+                        availableUsers = data.users;
+                        console.log('Available users:', availableUsers);
+                        renderAvailableUsers();
+                    } else {
+                        console.error('API error:', data.message);
+                        showError(availableUsersList, data.message || 'Failed to load users');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching available users:', error);
+                    showError(availableUsersList, 'Error loading users. Please try again.');
+                });
+        }
+
+        function renderAvailableUsers() {
+            if (availableUsers.length === 0) {
+                availableUsersList.innerHTML = `
+                    <div class="empty-list">
+                        <i class="bi bi-people"></i>
+                        <p>No available users found</p>
+                        <p class="text-muted">All users are already members of this organization</p>
+                    </div>
+                `;
+                return;
+            }
+
+            availableUsersList.innerHTML = '';
+            let filteredUsers = availableUsers;
+
+            // Apply search filter
+            const searchTerm = availableSearch.value.toLowerCase();
+            if (searchTerm) {
+                filteredUsers = availableUsers.filter(user =>
+                    user.username.toLowerCase().includes(searchTerm) ||
+                    user.email.toLowerCase().includes(searchTerm)
+                );
+            }
+
+            if (filteredUsers.length === 0) {
+                availableUsersList.innerHTML = `
+                    <div class="empty-list">
+                        <i class="bi bi-search"></i>
+                        <p>No users match your search</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Render users
+            filteredUsers.forEach(user => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item';
+                item.dataset.id = user.id;
+
+                item.innerHTML = `
+                    <input type="checkbox" class="form-check-input" id="available-user-${user.id}">
+                    <div class="user-info">
+                        <div class="user-name">
+                            ${user.username}
+                            ${user.is_admin ? '<span class="user-admin-badge">Admin</span>' : ''}
+                        </div>
+                        <div class="user-email">${user.email}</div>
+                    </div>
+                `;
+
+                const checkbox = item.querySelector('input[type="checkbox"]');
+
+                // Add click event to the item
+                item.addEventListener('click', function(e) {
+                    // Don't toggle if clicking on the checkbox directly
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                    toggleAvailableSelection(item, checkbox.checked);
+                });
+
+                // Add change event to the checkbox
+                checkbox.addEventListener('change', function() {
+                    toggleAvailableSelection(item, this.checked);
+                });
+
+                availableUsersList.appendChild(item);
+            });
+
+            updateButtonStates();
+        }
+
+        function renderSelectedUsers() {
+            if (selectedUsers.length === 0) {
+                selectedUsersList.innerHTML = `
+                    <div class="empty-list">
+                        <i class="bi bi-person-plus"></i>
+                        <p>No users selected</p>
+                    </div>
+                `;
+                submitButton.disabled = true;
+                return;
+            }
+
+            selectedUsersList.innerHTML = '';
+            let filteredUsers = selectedUsers;
+
+            // Apply search filter
+            const searchTerm = selectedSearch.value.toLowerCase();
+            if (searchTerm) {
+                filteredUsers = selectedUsers.filter(user =>
+                    user.username.toLowerCase().includes(searchTerm) ||
+                    user.email.toLowerCase().includes(searchTerm)
+                );
+            }
+
+            if (filteredUsers.length === 0) {
+                selectedUsersList.innerHTML = `
+                    <div class="empty-list">
+                        <i class="bi bi-search"></i>
+                        <p>No selected users match your search</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Render users
+            filteredUsers.forEach(user => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item';
+                item.dataset.id = user.id;
+
+                item.innerHTML = `
+                    <input type="checkbox" class="form-check-input" id="selected-user-${user.id}">
+                    <div class="user-info">
+                        <div class="user-name">
+                            ${user.username}
+                            ${user.is_admin ? '<span class="user-admin-badge">Admin</span>' : ''}
+                        </div>
+                        <div class="user-email">${user.email}</div>
+                    </div>
+                `;
+
+                const checkbox = item.querySelector('input[type="checkbox"]');
+
+                // Add click event to the item
+                item.addEventListener('click', function(e) {
+                    // Don't toggle if clicking on the checkbox directly
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                    toggleSelectedSelection(item, checkbox.checked);
+                });
+
+                // Add change event to the checkbox
+                checkbox.addEventListener('change', function() {
+                    toggleSelectedSelection(item, this.checked);
+                });
+
+                selectedUsersList.appendChild(item);
+            });
+
+            // Enable submit button if we have selected users
+            submitButton.disabled = selectedUsers.length === 0;
+
+            updateButtonStates();
+        }
+
+        function filterAvailableUsers() {
+            renderAvailableUsers();
+        }
+
+        function filterSelectedUsers() {
+            renderSelectedUsers();
+        }
+
+        function clearAvailableSearchField() {
+            availableSearch.value = '';
+            filterAvailableUsers();
+        }
+
+        function clearSelectedSearchField() {
+            selectedSearch.value = '';
+            filterSelectedUsers();
+        }
+
+        function toggleAvailableSelection(item, isChecked) {
+            const userId = item.dataset.id;
+
+            if (isChecked) {
+                if (!availableSelectedItems.includes(userId)) {
+                    availableSelectedItems.push(userId);
+                    item.classList.add('active');
+                }
+            } else {
+                const index = availableSelectedItems.indexOf(userId);
+                if (index !== -1) {
+                    availableSelectedItems.splice(index, 1);
+                    item.classList.remove('active');
+                }
+            }
+
+            updateButtonStates();
+        }
+
+        function toggleSelectedSelection(item, isChecked) {
+            const userId = item.dataset.id;
+
+            if (isChecked) {
+                if (!selectedSelectedItems.includes(userId)) {
+                    selectedSelectedItems.push(userId);
+                    item.classList.add('active');
+                }
+            } else {
+                const index = selectedSelectedItems.indexOf(userId);
+                if (index !== -1) {
+                    selectedSelectedItems.splice(index, 1);
+                    item.classList.remove('active');
+                }
+            }
+
+            updateButtonStates();
+        }
+
+        function addSelectedUsers() {
+            if (availableSelectedItems.length === 0) return;
+
+            // Find users to move
+            const usersToMove = availableUsers.filter(user =>
+                availableSelectedItems.includes(user.id.toString())
+            );
+
+            // Add to selected users
+            selectedUsers = [...selectedUsers, ...usersToMove];
+
+            // Remove from available users
+            availableUsers = availableUsers.filter(user =>
+                !availableSelectedItems.includes(user.id.toString())
+            );
+
+            // Clear selection
+            availableSelectedItems = [];
+
+            // Re-render both lists
+            renderAvailableUsers();
+            renderSelectedUsers();
+        }
+
+        function removeSelectedUsers() {
+            if (selectedSelectedItems.length === 0) return;
+
+            // Find users to move
+            const usersToMove = selectedUsers.filter(user =>
+                selectedSelectedItems.includes(user.id.toString())
+            );
+
+            // Add to available users
+            availableUsers = [...availableUsers, ...usersToMove];
+
+            // Remove from selected users
+            selectedUsers = selectedUsers.filter(user =>
+                !selectedSelectedItems.includes(user.id.toString())
+            );
+
+            // Clear selection
+            selectedSelectedItems = [];
+
+            // Re-render both lists
+            renderAvailableUsers();
+            renderSelectedUsers();
+        }
+
+        function toggleSelectAllAvailable() {
+            const items = availableUsersList.querySelectorAll('.list-group-item');
+            const checkboxes = availableUsersList.querySelectorAll('input[type="checkbox"]');
+
+            // Check if all are already selected
+            const allSelected = items.length > 0 && availableSelectedItems.length === items.length;
+
+            // Clear current selection
+            availableSelectedItems = [];
+
+            items.forEach(item => item.classList.remove('active'));
+
+            if (!allSelected) {
+                // Select all
+                items.forEach(item => {
+                    item.classList.add('active');
+                    availableSelectedItems.push(item.dataset.id);
+                });
+                checkboxes.forEach(checkbox => checkbox.checked = true);
+            } else {
+                // Deselect all
+                checkboxes.forEach(checkbox => checkbox.checked = false);
+            }
+
+            updateButtonStates();
+        }
+
+        function toggleSelectAllSelected() {
+            const items = selectedUsersList.querySelectorAll('.list-group-item');
+            const checkboxes = selectedUsersList.querySelectorAll('input[type="checkbox"]');
+
+            // Check if all are already selected
+            const allSelected = items.length > 0 && selectedSelectedItems.length === items.length;
+
+            // Clear current selection
+            selectedSelectedItems = [];
+
+            items.forEach(item => item.classList.remove('active'));
+
+            if (!allSelected) {
+                // Select all
+                items.forEach(item => {
+                    item.classList.add('active');
+                    selectedSelectedItems.push(item.dataset.id);
+                });
+                checkboxes.forEach(checkbox => checkbox.checked = true);
+            } else {
+                // Deselect all
+                checkboxes.forEach(checkbox => checkbox.checked = false);
+            }
+
+            updateButtonStates();
+        }
+
+        function updateButtonStates() {
+            // Update add button
+            addButton.disabled = availableSelectedItems.length === 0;
+
+            // Update remove button
+            removeButton.disabled = selectedSelectedItems.length === 0;
+
+            // Update submit button
+            submitButton.disabled = selectedUsers.length === 0;
+        }
+
+        function showError(container, message) {
+            container.innerHTML = `
+                <div class="empty-list">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+    });
+</script>
+{% endblock %}

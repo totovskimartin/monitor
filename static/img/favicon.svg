@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>SSL Certificate Icon</title>
+    <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <path d="M16,2 L28,6 L28,14 C28,21.732 22.732,28 16,28 C9.268,28 4,21.732 4,14 L4,6 L16,2 Z" fill="#4f46e5" fill-rule="nonzero"></path>
+        <path d="M16,6 L24,8.5 L24,14 C24,19.523 20.523,24 16,24 C11.477,24 8,19.523 8,14 L8,8.5 L16,6 Z" fill="#ffffff" fill-rule="nonzero"></path>
+        <path d="M16,10 C18.209,10 20,11.791 20,14 L20,16 L21,16 C21.552,16 22,16.448 22,17 L22,21 C22,21.552 21.552,22 21,22 L11,22 C10.448,22 10,21.552 10,21 L10,17 C10,16.448 10.448,16 11,16 L12,16 L12,14 C12,11.791 13.791,10 16,10 Z M16,12 C14.895,12 14,12.895 14,14 L14,16 L18,16 L18,14 C18,12.895 17.105,12 16,12 Z" fill="#4f46e5" fill-rule="nonzero"></path>
+    </g>
+</svg>

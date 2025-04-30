@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="profile-container">
+    <!-- Header Section -->
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">User Profile</h1>
+            <p class="dashboard-subtitle">Customize your profile settings</p>
+        </div>
+    </div>
+
+    <!-- Profile Content -->
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Profile Information Card -->
+            <div class="modern-card mb-4">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-person-circle"></i>
+                        Profile Information
+                    </h2>
+                </div>
+                <div class="modern-card-body">
+                    <form method="POST" action="{{ url_for('profile') }}">
+                        <!-- Display Messages -->
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                        {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+
+                        <!-- Username -->
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" value="{{ user.username }}" readonly>
+                            <div class="form-text">Your username cannot be changed.</div>
+                        </div>
+
+                        <!-- Email -->
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email Address</label>
+                            <input type="email" class="form-control" id="email" name="email" value="{{ user.email }}" required>
+                        </div>
+
+                        <!-- Display Name -->
+                        <div class="mb-3">
+                            <label for="display_name" class="form-label">Display Name</label>
+                            <input type="text" class="form-control" id="display_name" name="display_name" value="{{ user.display_name if user.display_name else '' }}">
+                            <div class="form-text">This name will be displayed instead of your username.</div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Change Password Card -->
+            <div class="modern-card mb-4">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-key"></i>
+                        Change Password
+                    </h2>
+                </div>
+                <div class="modern-card-body">
+                    <form method="POST" action="{{ url_for('change_password') }}">
+                        <!-- Current Password -->
+                        <div class="mb-3">
+                            <label for="current_password" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="current_password" name="current_password" required>
+                        </div>
+
+                        <!-- New Password -->
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="new_password" name="new_password" required>
+                        </div>
+
+                        <!-- Confirm New Password -->
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-primary">Change Password</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Preferences Card -->
+            <div class="modern-card mb-4">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-sliders"></i>
+                        Preferences
+                    </h2>
+                </div>
+                <div class="modern-card-body">
+                    <form method="POST" action="{{ url_for('update_preferences') }}">
+                        <!-- Theme Preference -->
+                        <div class="mb-3">
+                            <label class="form-label">Theme Preference</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="theme_preference" id="theme_system" value="system" {% if user.theme_preference == 'system' or not user.theme_preference %}checked{% endif %}>
+                                <label class="form-check-label" for="theme_system">
+                                    System Default
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="theme_preference" id="theme_light" value="light" {% if user.theme_preference == 'light' %}checked{% endif %}>
+                                <label class="form-check-label" for="theme_light">
+                                    Light Mode
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="theme_preference" id="theme_dark" value="dark" {% if user.theme_preference == 'dark' %}checked{% endif %}>
+                                <label class="form-check-label" for="theme_dark">
+                                    Dark Mode
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Email Notifications -->
+                        <div class="mb-3">
+                            <label class="form-label">Email Notifications</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="email_alerts" name="email_alerts" {% if user.email_alerts %}checked{% endif %}>
+                                <label class="form-check-label" for="email_alerts">Receive alert emails</label>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-primary">Save Preferences</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Account Information Card -->
+            <div class="modern-card">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-info-circle"></i>
+                        Account Information
+                    </h2>
+                </div>
+                <div class="modern-card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Account Type</label>
+                        <p class="mb-0">{% if user.is_admin %}Administrator{% else %}Standard User{% endif %}</p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Created</label>
+                        <p class="mb-0">{{ user.created_at if user.created_at else 'N/A' }}</p>
+                    </div>
+                    <div>
+                        <label class="form-label">Last Login</label>
+                        <p class="mb-0">{{ user.last_login if user.last_login else 'N/A' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

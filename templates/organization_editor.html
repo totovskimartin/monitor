@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+    .nav-tabs .nav-link {
+        color: var(--text-color);
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: 0.75rem 1rem;
+        font-weight: 500;
+    }
+
+    .nav-tabs .nav-link:hover {
+        border-color: transparent;
+        background-color: rgba(var(--bs-primary-rgb), 0.05);
+    }
+
+    .nav-tabs .nav-link.active {
+        color: var(--bs-primary);
+        background-color: transparent;
+        border-bottom: 2px solid var(--bs-primary);
+    }
+
+    [data-bs-theme="dark"] .nav-tabs .nav-link:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">{{ organization.name }}</h1>
+        <a href="{{ url_for('organizations') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Organizations
+        </a>
+    </div>
+
+    <ul class="nav nav-tabs mb-4" id="organizationTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="details-tab" data-bs-toggle="tab" data-bs-target="#details-tab-pane" type="button" role="tab" aria-controls="details-tab-pane" aria-selected="true">
+                <i class="bi bi-info-circle me-1"></i> Details
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="members-tab" data-bs-toggle="tab" data-bs-target="#members-tab-pane" type="button" role="tab" aria-controls="members-tab-pane" aria-selected="false">
+                <i class="bi bi-people me-1"></i> Members
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tags-tab" data-bs-toggle="tab" data-bs-target="#tags-tab-pane" type="button" role="tab" aria-controls="tags-tab-pane" aria-selected="false">
+                <i class="bi bi-tags me-1"></i> Tags
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="domains-tab" data-bs-toggle="tab" data-bs-target="#domains-tab-pane" type="button" role="tab" aria-controls="domains-tab-pane" aria-selected="false">
+                <i class="bi bi-globe me-1"></i> Domains
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="organizationTabsContent">
+        <!-- Details Tab -->
+        <div class="tab-pane fade show active" id="details-tab-pane" role="tabpanel" aria-labelledby="details-tab" tabindex="0">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="h5 mb-0">Organization Details</h2>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('edit_organization', org_id=organization.id) }}">
+                        <input type="hidden" name="form_type" value="organization_details">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Organization Name</label>
+                            <input type="text" class="form-control" id="name" name="name" value="{{ organization.name }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3">{{ organization.description or '' }}</textarea>
+                            <div class="form-text">Optional description of the organization.</div>
+                        </div>
+                        <div class="d-flex justify-content-end">
+                            <button type="submit" class="btn btn-primary">Update Organization</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Members Tab -->
+        <div class="tab-pane fade" id="members-tab-pane" role="tabpanel" aria-labelledby="members-tab" tabindex="0">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="h5 mb-0">Organization Members</h2>
+                </div>
+                <div class="card-body">
+                    {% if users %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user_item in users %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="me-2">
+                                                <i class="bi bi-person"></i>
+                                            </span>
+                                            <span>{{ user_item.username }}</span>
+                                            {% if user_item.is_admin %}
+                                            <span class="badge bg-danger ms-2">Admin</span>
+                                            {% endif %}
+                                            {% if user.id == user_item.id %}
+                                            <span class="badge bg-primary ms-2">You</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>{{ user_item.email }}</td>
+                                    <td>
+                                        {% if user.id != user_item.id %}
+                                        <form action="{{ url_for('update_organization_user_role', org_id=organization.id, user_id=user_item.id) }}" method="post" class="d-flex align-items-center">
+                                            <select name="role" class="form-select form-select-sm" style="width: auto;">
+                                                <option value="member" {% if user_item.role == 'member' %}selected{% endif %}>Member</option>
+                                                <option value="admin" {% if user_item.role == 'admin' %}selected{% endif %}>Admin</option>
+                                            </select>
+                                            <button type="submit" class="btn btn-sm btn-outline-primary ms-2">Update</button>
+                                        </form>
+                                        {% else %}
+                                        <span class="badge bg-{{ 'primary' if user_item.role == 'admin' else 'secondary' }}">
+                                            {{ user_item.role|title }}
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if user.id != user_item.id %}
+                                        <button type="button" class="btn btn-sm btn-outline-danger"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#removeUserModal{{ user_item.id }}">
+                                            <i class="bi bi-person-x"></i> Remove
+                                        </button>
+
+                                        <!-- Remove User Modal -->
+                                        <div class="modal fade" id="removeUserModal{{ user_item.id }}" tabindex="-1" aria-labelledby="removeUserModalLabel{{ user_item.id }}" aria-hidden="true">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title" id="removeUserModalLabel{{ user_item.id }}">Confirm Remove</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to remove <strong>{{ user_item.username }}</strong> from the organization <strong>{{ organization.name }}</strong>?</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="{{ url_for('remove_organization_user', org_id=organization.id, user_id=user_item.id) }}" method="post">
+                                                            <button type="submit" class="btn btn-danger">Remove Member</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <span class="text-muted">Cannot remove yourself</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <p class="mb-0">No members in this organization.</p>
+                        <div class="mt-3">
+                            <a href="{{ url_for('add_organization_user', org_id=organization.id) }}" class="btn btn-primary">
+                                <i class="bi bi-plus-lg"></i> Add Member
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Tags Tab -->
+        <div class="tab-pane fade" id="tags-tab-pane" role="tabpanel" aria-labelledby="tags-tab" tabindex="0">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2 class="h5 mb-0">Organization Tags</h2>
+                    <a href="{{ url_for('create_tag', org_id=organization.id) }}" class="btn btn-sm btn-primary">
+                        <i class="bi bi-plus-lg"></i> Create Tag
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if tags %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Color</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tag in tags %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="badge me-2" style="background-color: {{ tag.color }};">&nbsp;</span>
+                                            <span>{{ tag.name }}</span>
+                                        </div>
+                                    </td>
+                                    <td>{{ tag.color }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ url_for('edit_tag', org_id=organization.id, tag_id=tag.id) }}" class="btn btn-sm btn-outline-secondary">
+                                                <i class="bi bi-pencil"></i> Edit
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#deleteTagModal{{ tag.id }}">
+                                                <i class="bi bi-trash"></i> Delete
+                                            </button>
+                                        </div>
+
+                                        <!-- Delete Tag Modal -->
+                                        <div class="modal fade" id="deleteTagModal{{ tag.id }}" tabindex="-1" aria-labelledby="deleteTagModalLabel{{ tag.id }}" aria-hidden="true">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title" id="deleteTagModalLabel{{ tag.id }}">Confirm Delete</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to delete the tag <strong>{{ tag.name }}</strong>?</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="{{ url_for('delete_tag', org_id=organization.id, tag_id=tag.id) }}" method="post">
+                                                            <button type="submit" class="btn btn-danger">Delete Tag</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <p class="mb-0">No tags in this organization.</p>
+                        <a href="{{ url_for('create_tag', org_id=organization.id) }}" class="btn btn-primary mt-3">
+                            <i class="bi bi-plus-lg"></i> Create Tag
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Domains Tab -->
+        <div class="tab-pane fade" id="domains-tab-pane" role="tabpanel" aria-labelledby="domains-tab" tabindex="0">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="h5 mb-0">Organization Domains</h2>
+                </div>
+                <div class="card-body">
+                    {% if domains %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Monitoring</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for domain in domains %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="me-2">
+                                                <i class="bi bi-globe"></i>
+                                            </span>
+                                            <span>{{ domain.name }}</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-2">
+                                            {% if domain.ssl_monitored %}
+                                            <span class="badge bg-primary">SSL</span>
+                                            {% endif %}
+                                            {% if domain.expiry_monitored %}
+                                            <span class="badge bg-info">Expiry</span>
+                                            {% endif %}
+                                            {% if domain.ping_monitored %}
+                                            <span class="badge bg-success">Ping</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if domain.ssl_status == 'valid' %}
+                                        <span class="badge bg-success">Valid</span>
+                                        {% elif domain.ssl_status == 'warning' %}
+                                        <span class="badge bg-warning">Warning</span>
+                                        {% elif domain.ssl_status == 'expired' %}
+                                        <span class="badge bg-danger">Expired</span>
+                                        {% elif domain.ssl_status == 'error' %}
+                                        <span class="badge bg-danger">Error</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Unknown</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ url_for('domain_details', domain_id=domain.id) }}" class="btn btn-sm btn-outline-secondary" title="View domain details">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <p class="mb-0">No domains in this organization.</p>
+                        <div class="mt-3">
+                            <a href="{{ url_for('ssl_certificates') }}" class="btn btn-outline-primary me-2">
+                                <i class="bi bi-shield-lock"></i> Add SSL Certificate
+                            </a>
+                            <a href="{{ url_for('domain_expiry') }}" class="btn btn-outline-primary me-2">
+                                <i class="bi bi-calendar"></i> Add Domain Expiry
+                            </a>
+                            <a href="{{ url_for('ping_monitoring') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-wifi"></i> Add Ping Monitoring
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get the tab from URL hash if present
+        const hash = window.location.hash;
+        if (hash) {
+            const tab = document.querySelector(`[data-bs-target="${hash}-tab-pane"]`);
+            if (tab) {
+                const tabInstance = new bootstrap.Tab(tab);
+                tabInstance.show();
+            }
+        }
+
+        // Update URL hash when tab changes
+        const tabs = document.querySelectorAll('button[data-bs-toggle="tab"]');
+        tabs.forEach(tab => {
+            tab.addEventListener('shown.bs.tab', function(event) {
+                const targetId = event.target.getAttribute('id').replace('-tab', '');
+                history.replaceState(null, null, `#${targetId}`);
+            });
+        });
+
+        // Organization ID
+        const orgId = {{ organization.id }};
+
+        // Function to get CSRF token (utility function kept for future use)
+        function getCsrfToken() {
+            // Try to get CSRF token from meta tag
+            const metaTag = document.querySelector('meta[name="csrf-token"]');
+            if (metaTag) {
+                return metaTag.getAttribute('content');
+            }
+
+            // If no meta tag, try to get from cookie
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.startsWith('csrf_token=')) {
+                    return cookie.substring('csrf_token='.length, cookie.length);
+                }
+            }
+
+            return '';
+        }
+    });
+</script>
+{% endblock %}

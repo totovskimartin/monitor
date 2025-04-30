@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h1 class="h4 mb-0">Welcome to Certifly!</h1>
+                </div>
+                <div class="card-body">
+                    <div class="modern-alert modern-alert-info mb-4">
+                        <div class="modern-alert-icon">
+                            <i class="bi bi-info-circle"></i>
+                        </div>
+                        <div class="modern-alert-content">
+                            <h5 class="alert-heading">First-time Setup</h5>
+                            <p>Before you can start using Certifly, you need to create your own organization. Organizations help you organize your domains and collaborate with team members.</p>
+                            <p>Each user must create at least one organization to use the system. You'll be the administrator of this organization and can invite other users to join.</p>
+                        </div>
+                    </div>
+
+                    <form method="post" action="{{ url_for('create_first_organization') }}">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Organization Name</label>
+                            <input type="text" class="form-control" id="name" name="name" placeholder="Enter your organization name" required>
+                            <div class="form-text">Choose a name for your organization (e.g., your company name).</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3" placeholder="Brief description of your organization"></textarea>
+                            <div class="form-text">Optional description of the organization.</div>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Create Organization</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

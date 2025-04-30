@@ -1,0 +1,418 @@
+{% extends 'base.html' %}
+
+{% block title %}Ping Monitoring - Certifly{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">Ping Monitoring</h1>
+            <p class="dashboard-subtitle">Monitor host availability and response times</p>
+        </div>
+        <div class="dashboard-actions">
+            <div class="btn-group">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addHostModal">
+                    <i class="bi bi-plus-lg"></i> Add Host
+                </button>
+                <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle Dropdown</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#addBulkHostsModal">Add Bulk Hosts</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    {% include 'includes/flash_messages.html' %}
+
+    <div class="row">
+        <!-- Main Content - Hosts Table -->
+        <div class="col-lg-8">
+            <div class="dashboard-main-content">
+                <!-- Hosts Table Card -->
+                <div class="modern-card domains-card">
+                    <div class="modern-card-header">
+                        <h2 class="modern-card-title">
+                            <i class="bi bi-activity"></i>
+                            Monitored Hosts
+                            <span class="badge bg-primary rounded-pill ms-2">{{ ping_results|length }}</span>
+                        </h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" class="form-control" placeholder="Search hosts...">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modern-card-body">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Host</th>
+                                    <th>Status</th>
+                                    <th>Response Time</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in ping_results %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="ping-indicator ping-{{ result.status }} me-2" title="Ping status: {{ result.status }}" data-host="{{ result.host }}"></span>
+                                            <span class="domain-name">{{ result.host }}</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if result.status == 'up' %}
+                                            <span class="badge bg-success">Online</span>
+                                        {% elif result.status == 'down' %}
+                                            <span class="badge bg-danger">Offline</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Unknown</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if result.status == 'up' %}
+                                            {{ result.response_time|round(2) }} ms
+                                            <small class="text-muted">
+                                                (Last checked: {{ result.last_checked.strftime('%H:%M:%S') }})
+                                            </small>
+                                        {% elif result.status == 'down' %}
+                                            <span class="text-danger">No response</span>
+                                        {% else %}
+                                            <span class="text-muted">Unknown</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#pingDetailsModal"
+                                                    data-host="{{ result.host }}"
+                                                    data-status="{{ result.status }}"
+                                                    data-response-time="{{ result.response_time|round(2) }}"
+                                                    data-last-checked="{% if result.last_checked %}{{ result.last_checked.strftime('%Y-%m-%d %H:%M:%S') }}{% endif %}"
+                                                    data-bs-toggle="tooltip"
+                                                    title="View Details">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="action-btn"
+                                                    data-action="refresh"
+                                                    data-host="{{ result.host }}"
+                                                    data-bs-toggle="tooltip"
+                                                    title="Refresh">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </button>
+                                            <a href="{{ url_for('remove_ping_host', host=result.host) }}"
+                                               class="action-btn"
+                                               onclick="return confirm('Are you sure you want to remove this host?')"
+                                               data-bs-toggle="tooltip"
+                                               title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+
+                        <!-- Empty State Message (shown when no hosts are being monitored) -->
+                        {% if not ping_results %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-activity text-muted" style="font-size: 2rem;"></i>
+                            <p class="text-muted mt-3">No hosts added yet</p>
+                            <p class="text-muted small">Add a host using the form to start monitoring</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="col-lg-4">
+            <!-- Status Overview -->
+            {% if ping_results %}
+            <div class="modern-card mb-4">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-graph-up"></i>
+                        Status Overview
+                    </h2>
+                </div>
+                <div class="modern-card-body">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-card-icon" style="background-color: var(--success-bg); color: var(--success);">
+                                <i class="bi bi-check-circle"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <h3 class="stat-card-value">{{ ping_stats.up }}</h3>
+                                <p class="stat-card-label">Online</p>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-card-icon" style="background-color: var(--danger-bg); color: var(--danger);">
+                                <i class="bi bi-x-circle"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <h3 class="stat-card-value">{{ ping_stats.down }}</h3>
+                                <p class="stat-card-label">Offline</p>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-card-icon" style="background-color: var(--neutral-bg); color: var(--neutral);">
+                                <i class="bi bi-question-circle"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <h3 class="stat-card-value">{{ ping_stats.unknown }}</h3>
+                                <p class="stat-card-label">Unknown</p>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-card-icon" style="background-color: var(--primary-bg); color: var(--primary);">
+                                <i class="bi bi-activity"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <h3 class="stat-card-value">{{ ping_stats.total }}</h3>
+                                <p class="stat-card-label">Total</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+
+    </div>
+</div>
+</div>
+
+<!-- Ping Details Modal -->
+<div class="modal fade" id="pingDetailsModal" tabindex="-1" aria-labelledby="pingDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pingDetailsModalLabel">Ping Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table ping-details-table">
+                    <tbody>
+                        <tr>
+                            <th>Status</th>
+                            <td id="ping-status"></td>
+                        </tr>
+                        <tr>
+                            <th>Response Time</th>
+                            <td id="ping-response-time"></td>
+                        </tr>
+                        <tr>
+                            <th>Last Checked</th>
+                            <td id="ping-last-checked"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="refresh-ping-btn">
+                    <i class="bi bi-arrow-repeat me-1"></i> Refresh Now
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Bulk Hosts Modal -->
+<div class="modal fade" id="addBulkHostsModal" tabindex="-1" aria-labelledby="addBulkHostsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addBulkHostsModalLabel">Add Hosts</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('bulk_import_ping') }}" method="POST" id="bulkHostsForm">
+                    <div class="mb-3">
+                        <label for="modal-hosts" class="form-label">Host List</label>
+                        <textarea class="form-control" id="modal-hosts" name="hosts" rows="6" placeholder="Enter multiple hosts (one per line, or comma-separated)" required></textarea>
+                        <div class="form-text">Separate by newlines, commas, or spaces</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="bulkHostsSubmit">
+                    <i class="bi bi-plus-lg me-1"></i> Add Hosts
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Host Modal -->
+<div class="modal fade" id="addHostModal" tabindex="-1" aria-labelledby="addHostModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addHostModalLabel">Add Host</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('add_ping_host') }}" method="POST" id="addHostForm">
+                    <div class="mb-3">
+                        <label for="host" class="form-label">Host</label>
+                        <input type="text" class="form-control" id="host" name="host" placeholder="example.com or 192.168.1.1" required>
+                        <div class="form-text">Enter hostname or IP address</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="addHostSubmit">
+                    <i class="bi bi-plus-lg me-1"></i> Add Host
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Modal Scripts -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add Host Modal
+        const addHostModal = document.getElementById('addHostModal');
+        const addHostSubmit = document.getElementById('addHostSubmit');
+        const addHostForm = document.getElementById('addHostForm');
+
+        // Bulk Hosts Modal
+        const bulkHostsModal = document.getElementById('addBulkHostsModal');
+        const bulkHostsSubmit = document.getElementById('bulkHostsSubmit');
+        const bulkHostsForm = document.getElementById('bulkHostsForm');
+
+        // Fix for modal backdrop issue
+        if (addHostModal) {
+            addHostModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (bulkHostsModal) {
+            bulkHostsModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (addHostSubmit && addHostForm) {
+            addHostSubmit.addEventListener('click', function() {
+                // Submit the form
+                addHostForm.submit();
+            });
+        }
+
+        if (bulkHostsSubmit && bulkHostsForm) {
+            bulkHostsSubmit.addEventListener('click', function() {
+                // Submit the form
+                bulkHostsForm.submit();
+            });
+        }
+
+        // Ping Details Modal
+        const pingDetailsModal = document.getElementById('pingDetailsModal');
+        const refreshPingBtn = document.getElementById('refresh-ping-btn');
+        let currentHost = '';
+
+        pingDetailsModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            currentHost = button.getAttribute('data-host');
+            const status = button.getAttribute('data-status');
+            const responseTime = button.getAttribute('data-response-time');
+            const lastChecked = button.getAttribute('data-last-checked');
+
+            // Update modal content
+            document.getElementById('ping-status').textContent = status === 'up' ? 'Online' : status === 'down' ? 'Offline' : 'Unknown';
+            document.getElementById('ping-response-time').textContent = status === 'up' ? responseTime + ' ms' : status === 'down' ? 'No response' : 'Unknown';
+            document.getElementById('ping-last-checked').textContent = lastChecked || 'N/A';
+
+            // Add status class to status cell
+            const statusCell = document.getElementById('ping-status');
+            statusCell.className = ''; // Clear existing classes
+            statusCell.classList.add('status-' + status);
+        });
+
+        if (refreshPingBtn) {
+            refreshPingBtn.addEventListener('click', function() {
+                if (!currentHost) return;
+
+                // Show loading state
+                refreshPingBtn.disabled = true;
+                refreshPingBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Refreshing...';
+
+                // Call API to refresh ping
+                fetch(`/api/ping/${currentHost}/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update modal with new data
+                        const status = data.ping_status;
+                        document.getElementById('ping-status').textContent = status === 'up' ? 'Online' : status === 'down' ? 'Offline' : 'Unknown';
+                        document.getElementById('ping-response-time').textContent = status === 'up' ? data.response_time + ' ms' : status === 'down' ? 'No response' : 'Unknown';
+                        document.getElementById('ping-last-checked').textContent = new Date().toLocaleString();
+
+                        // Update status class
+                        const statusCell = document.getElementById('ping-status');
+                        statusCell.className = ''; // Clear existing classes
+                        statusCell.classList.add('status-' + status);
+
+                        // Show success message
+                        alert('Ping refreshed successfully');
+
+                        // Reload the page to update the table
+                        window.location.reload();
+                    } else {
+                        alert('Error refreshing ping: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error refreshing ping');
+                })
+                .finally(() => {
+                    // Reset button state
+                    refreshPingBtn.disabled = false;
+                    refreshPingBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh Now';
+                });
+            });
+        }
+    });
+</script>
+{% endblock %}

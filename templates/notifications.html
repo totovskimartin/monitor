@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold mb-4">Notification Settings</h1>
+        <p class="lead mb-4">Configure how you want to be notified about certificate and domain expiry alerts.</p>
+    </div>
+</div>
+
+<!-- Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Configure the notification channels you want to use for monitoring alerts. Enable only the channels you need.
+                </div>
+
+                <!-- Notification Channels Accordion -->
+                <div class="accordion" id="notificationAccordion">
+                    <!-- Email Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.email.enabled %}collapsed{% endif %}"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#emailCollapse"
+                                    aria-expanded="{% if notifications.email.enabled %}true{% else %}false{% endif %}"
+                                    aria-controls="emailCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-envelope me-2"></i>
+                                    <span>Email Notifications</span>
+                                    <div class="form-check form-switch ms-2">
+                                        <input class="form-check-input" type="checkbox" id="emailEnabled"
+                                               {% if notifications.email.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('email', this.checked); event.stopPropagation();">
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="emailCollapse" class="accordion-collapse collapse {% if notifications.email.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="emailForm">
+                                    <input type="hidden" name="notification_type" value="email">
+                                    <input type="hidden" name="enabled" value="{% if notifications.email.enabled %}true{% else %}false{% endif %}" id="emailEnabledInput">
+
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="smtp_server" class="form-label">SMTP Server</label>
+                                            <input type="text" class="form-control" id="smtp_server" name="smtp_server"
+                                                   value="{{ notifications.email.smtp_server }}"
+                                                   {% if not notifications.email.enabled %}disabled{% endif %}>
+                                        </div>
+
+                                        <div class="col-md-6 mb-3">
+                                            <label for="smtp_port" class="form-label">SMTP Port</label>
+                                            <input type="number" class="form-control" id="smtp_port" name="smtp_port"
+                                                   value="{{ notifications.email.smtp_port }}"
+                                                   {% if not notifications.email.enabled %}disabled{% endif %}>
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="smtp_username" class="form-label">SMTP Username</label>
+                                            <input type="text" class="form-control" id="smtp_username" name="smtp_username"
+                                                   value="{{ notifications.email.smtp_username }}"
+                                                   {% if not notifications.email.enabled %}disabled{% endif %}>
+                                        </div>
+
+                                        <div class="col-md-6 mb-3">
+                                            <label for="smtp_password" class="form-label">SMTP Password</label>
+                                            <input type="password" class="form-control" id="smtp_password" name="smtp_password"
+                                                   value="{{ notifications.email.smtp_password }}"
+                                                   {% if not notifications.email.enabled %}disabled{% endif %}>
+                                            <div class="form-text">Leave blank to keep the existing password</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="notification_email" class="form-label">Recipient Email</label>
+                                        <input type="email" class="form-control" id="notification_email" name="notification_email"
+                                               value="{{ notifications.email.notification_email }}"
+                                               {% if not notifications.email.enabled %}disabled{% endif %}>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="warning_threshold_days" class="form-label">Warning Threshold (Days)</label>
+                                        <input type="number" class="form-control" id="warning_threshold_days" name="warning_threshold_days"
+                                               value="{{ notifications.email.warning_threshold_days|default(10) }}"
+                                               {% if not notifications.email.enabled %}disabled{% endif %}>
+                                        <div class="form-text">Send notifications when certificates or domains are about to expire within this many days</div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.email.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save Email Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('email')" {% if not notifications.email.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-envelope-check me-1"></i> Test Email
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Microsoft Teams Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.teams.enabled %}collapsed{% endif %}"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#teamsCollapse"
+                                    aria-expanded="{% if notifications.teams.enabled %}true{% else %}false{% endif %}"
+                                    aria-controls="teamsCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-microsoft-teams me-2"></i>
+                                    <span>Microsoft Teams</span>
+                                    <div class="form-check form-switch ms-2">
+                                        <input class="form-check-input" type="checkbox" id="teamsEnabled"
+                                               {% if notifications.teams.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('teams', this.checked); event.stopPropagation();">
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="teamsCollapse" class="accordion-collapse collapse {% if notifications.teams.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="teamsForm">
+                                    <input type="hidden" name="notification_type" value="teams">
+                                    <input type="hidden" name="enabled" value="{% if notifications.teams.enabled %}true{% else %}false{% endif %}" id="teamsEnabledInput">
+
+                                    <div class="mb-3">
+                                        <label for="teams_webhook_url" class="form-label">Webhook URL</label>
+                                        <input type="text" class="form-control" id="teams_webhook_url" name="webhook_url"
+                                               value="{{ notifications.teams.webhook_url }}"
+                                               {% if not notifications.teams.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter the webhook URL for your Microsoft Teams channel.
+                                            <a href="https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook" target="_blank">
+                                                Learn how to create a webhook
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.teams.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save Teams Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('teams')" {% if not notifications.teams.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-microsoft-teams me-1"></i> Test Teams Notification
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Slack Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.slack.enabled %}collapsed{% endif %}"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#slackCollapse"
+                                    aria-expanded="{% if notifications.slack.enabled %}true{% else %}false{% endif %}"
+                                    aria-controls="slackCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-slack me-2"></i>
+                                    <span>Slack</span>
+                                    <div class="form-check form-switch ms-2">
+                                        <input class="form-check-input" type="checkbox" id="slackEnabled"
+                                               {% if notifications.slack.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('slack', this.checked); event.stopPropagation();">
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="slackCollapse" class="accordion-collapse collapse {% if notifications.slack.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="slackForm">
+                                    <input type="hidden" name="notification_type" value="slack">
+                                    <input type="hidden" name="enabled" value="{% if notifications.slack.enabled %}true{% else %}false{% endif %}" id="slackEnabledInput">
+
+                                    <div class="mb-3">
+                                        <label for="slack_webhook_url" class="form-label">Webhook URL</label>
+                                        <input type="text" class="form-control" id="slack_webhook_url" name="webhook_url"
+                                               value="{{ notifications.slack.webhook_url }}"
+                                               {% if not notifications.slack.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter the webhook URL for your Slack channel.
+                                            <a href="https://api.slack.com/messaging/webhooks" target="_blank">
+                                                Learn how to create a webhook
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="slack_channel" class="form-label">Channel (Optional)</label>
+                                        <input type="text" class="form-control" id="slack_channel" name="channel"
+                                               value="{{ notifications.slack.channel }}"
+                                               {% if not notifications.slack.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter the channel name (e.g., #alerts). Leave blank to use the webhook's default channel.
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.slack.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save Slack Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('slack')" {% if not notifications.slack.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-slack me-1"></i> Test Slack Notification
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Discord Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button d-flex justify-content-between align-items-center {% if not notifications.discord.enabled %}collapsed{% endif %}"
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#discordCollapse"
+                                    aria-expanded="{% if notifications.discord.enabled %}true{% else %}false{% endif %}"
+                                    aria-controls="discordCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-discord me-2"></i>
+                                    <span>Discord</span>
+                                    <div class="form-check form-switch ms-2">
+                                        <input class="form-check-input" type="checkbox" id="discordEnabled"
+                                               {% if notifications.discord.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('discord', this.checked); event.stopPropagation();">
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="discordCollapse" class="accordion-collapse collapse {% if notifications.discord.enabled %}show{% endif %}" data-bs-parent="#notificationAccordion">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="discordForm">
+                                    <input type="hidden" name="notification_type" value="discord">
+                                    <input type="hidden" name="enabled" value="{% if notifications.discord.enabled %}true{% else %}false{% endif %}" id="discordEnabledInput">
+
+                                    <div class="mb-3">
+                                        <label for="discord_webhook_url" class="form-label">Webhook URL</label>
+                                        <input type="text" class="form-control" id="discord_webhook_url" name="webhook_url"
+                                               value="{{ notifications.discord.webhook_url }}"
+                                               {% if not notifications.discord.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter the webhook URL for your Discord channel.
+                                            <a href="https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks" target="_blank">
+                                                Learn how to create a webhook
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="discord_username" class="form-label">Bot Username (Optional)</label>
+                                        <input type="text" class="form-control" id="discord_username" name="username"
+                                               value="{{ notifications.discord.username }}"
+                                               {% if not notifications.discord.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Custom username for the webhook bot. Leave blank to use the default.
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.discord.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save Discord Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('discord')" {% if not notifications.discord.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-discord me-1"></i> Test Discord Notification
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Notification Modal -->
+<div class="modal fade" id="testNotificationModal" tabindex="-1" aria-labelledby="testNotificationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="testNotificationModalLabel">Test Notification</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Send a test notification to verify your settings?</p>
+                <form id="testNotificationForm" action="{{ url_for('test_notification') }}" method="POST">
+                    <input type="hidden" name="notification_type" id="testNotificationType" value="">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="testNotificationForm" class="btn btn-primary">Send Test</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleNotificationSection(type, enabled) {
+        // Update the hidden input
+        document.getElementById(type + 'EnabledInput').value = enabled ? 'true' : 'false';
+
+        // Enable/disable form fields
+        const form = document.getElementById(type + 'Form');
+        const inputs = form.querySelectorAll('input:not([type="hidden"]), select, textarea, button');
+
+        inputs.forEach(input => {
+            input.disabled = !enabled;
+        });
+
+        // Show/hide the accordion section
+        if (enabled) {
+            const collapseElement = document.getElementById(type + 'Collapse');
+            const accordion = bootstrap.Collapse.getInstance(collapseElement) || new bootstrap.Collapse(collapseElement, { toggle: false });
+            accordion.show();
+        }
+    }
+
+    function testNotification(type) {
+        // Set the notification type in the modal form
+        document.getElementById('testNotificationType').value = type;
+
+        // Update modal title based on notification type
+        let title = 'Test ';
+        switch(type) {
+            case 'email':
+                title += 'Email';
+                break;
+            case 'teams':
+                title += 'Microsoft Teams';
+                break;
+            case 'slack':
+                title += 'Slack';
+                break;
+            case 'discord':
+                title += 'Discord';
+                break;
+        }
+        document.getElementById('testNotificationModalLabel').textContent = title + ' Notification';
+
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('testNotificationModal'));
+        modal.show();
+    }
+
+    // Prevent toggle switches from toggling the accordion when clicked
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle toggle switch clicks
+        const toggleSwitches = document.querySelectorAll('.form-check-input');
+        toggleSwitches.forEach(toggle => {
+            toggle.addEventListener('click', function(e) {
+                // Stop the event from triggering the accordion toggle
+                e.stopPropagation();
+            });
+        });
+
+        // Also prevent clicks on the form-switch container from toggling the accordion
+        const formSwitches = document.querySelectorAll('.form-switch');
+        formSwitches.forEach(switchEl => {
+            switchEl.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+    });
+</script>
+{% endblock %}

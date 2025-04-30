@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+
+{% block title %}SSL Certificate Monitoring - Certifly{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">SSL Certificate Monitoring</h1>
+            <p class="dashboard-subtitle">Monitor SSL certificates for your domains and get notified before they expire.</p>
+        </div>
+        <div class="dashboard-actions">
+            <div class="btn-group">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                    <i class="bi bi-plus-lg"></i> Add Domain
+                </button>
+                <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle Dropdown</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#addBulkDomainsModal">Add Bulk Domains</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row">
+        <!-- Main Content - Certificates Table -->
+        <div class="col-lg-8">
+            <div class="dashboard-main-content">
+                <!-- Certificates Table Card -->
+                <div class="modern-card domains-card">
+                    <div class="modern-card-header">
+                        <h2 class="modern-card-title">
+                            <i class="bi bi-shield-lock"></i>
+                            Monitored SSL Certificates
+                            <span class="badge bg-primary rounded-pill ms-2">{{ certificates|length }}</span>
+                        </h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" class="form-control" placeholder="Search certificates...">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modern-card-body">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Status</th>
+                                    <th>Expiry</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cert in certificates %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="domain-name">{{ cert.domain }}</span>
+                                            <a href="https://{{ cert.domain }}" target="_blank" class="btn btn-link btn-sm ms-2" title="Open website">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="status-indicator status-indicator-{{ cert.status }}"></span>
+                                            {% if cert.status == 'valid' %}
+                                                Valid
+                                            {% elif cert.status == 'warning' %}
+                                                Warning
+                                            {% elif cert.status == 'expired' %}
+                                                Expired
+                                            {% elif cert.status == 'error' %}
+                                                Error
+                                            {% else %}
+                                                Unknown
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if cert.status != 'error' %}
+                                            <span class="{% if cert.status == 'expired' %}status-expired{% elif cert.status == 'warning' %}status-warning{% else %}status-valid{% endif %}">
+                                                {{ cert.days_remaining }} days
+                                            </span>
+                                            <small class="text-muted">({{ cert.expiry_date.strftime('%Y-%m-%d') }})</small>
+                                        {% else %}
+                                            <span class="badge bg-danger">Error checking</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#certDetailsModal"
+                                                    data-domain="{{ cert.domain }}"
+                                                    data-status="{{ cert.status }}"
+                                                    data-days="{{ cert.days_remaining }}"
+                                                    data-expiry="{{ cert.expiry_date.strftime('%Y-%m-%d') }}"
+                                                    data-bs-toggle="tooltip"
+                                                    title="View Details">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="action-btn"
+                                                    data-action="refresh"
+                                                    data-domain="{{ cert.domain }}"
+                                                    data-bs-toggle="tooltip"
+                                                    title="Refresh">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </button>
+                                            <a href="{{ url_for('remove_ssl_domain', domain=cert.domain) }}"
+                                               class="action-btn"
+                                               onclick="return confirm('Are you sure you want to remove this domain?')"
+                                               data-bs-toggle="tooltip"
+                                               title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+
+                        <!-- Empty State Message (shown when no certificates are being monitored) -->
+                        {% if not certificates %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-shield-exclamation text-muted" style="font-size: 2rem;"></i>
+                            <p class="text-muted mt-3">No domains added yet</p>
+                            <p class="text-muted small">Add a domain using the form to start monitoring SSL certificates</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <div class="col-lg-4">
+        <!-- Status Overview -->
+        {% if certificates %}
+        <div class="modern-card mb-4">
+            <div class="modern-card-header">
+                <h2 class="modern-card-title">
+                    <i class="bi bi-graph-up"></i>
+                    Status Overview
+                </h2>
+            </div>
+            <div class="modern-card-body">
+                {% set valid_count = certificates|selectattr('status', 'equalto', 'valid')|list|length %}
+                {% set warning_count = certificates|selectattr('status', 'equalto', 'warning')|list|length %}
+                {% set expired_count = certificates|selectattr('status', 'equalto', 'expired')|list|length %}
+                {% set error_count = certificates|selectattr('status', 'equalto', 'error')|list|length %}
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-card-icon" style="background-color: var(--success-bg); color: var(--success);">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div class="stat-card-content">
+                            <h3 class="stat-card-value">{{ valid_count }}</h3>
+                            <p class="stat-card-label">Valid</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-icon" style="background-color: var(--warning-bg); color: var(--warning);">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-card-content">
+                            <h3 class="stat-card-value">{{ warning_count }}</h3>
+                            <p class="stat-card-label">Expiring Soon</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-icon" style="background-color: var(--danger-bg); color: var(--danger);">
+                            <i class="bi bi-x-circle"></i>
+                        </div>
+                        <div class="stat-card-content">
+                            <h3 class="stat-card-value">{{ expired_count }}</h3>
+                            <p class="stat-card-label">Expired</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-icon" style="background-color: var(--neutral-bg); color: var(--neutral);">
+                            <i class="bi bi-question-circle"></i>
+                        </div>
+                        <div class="stat-card-content">
+                            <h3 class="stat-card-value">{{ error_count }}</h3>
+                            <p class="stat-card-label">Error</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+
+    </div>
+</div>
+</div>
+
+<!-- Add Domain Modal -->
+<div class="modal fade" id="addDomainModal" tabindex="-1" aria-labelledby="addDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addDomainModalLabel">Add Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('add_ssl_domain') }}" method="POST" id="addDomainForm">
+                    <div class="mb-3">
+                        <label for="domain" class="form-label">Domain Name</label>
+                        <input type="text" class="form-control" id="domain" name="domain" placeholder="example.com" required>
+                        <div class="form-text">Enter domain without http:// or https://</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="addDomainSubmit">
+                    <i class="bi bi-plus-lg me-1"></i> Add Domain
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Bulk Domains Modal -->
+<div class="modal fade" id="addBulkDomainsModal" tabindex="-1" aria-labelledby="addBulkDomainsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addBulkDomainsModalLabel">Add Domains</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('bulk_import_ssl') }}" method="POST" id="bulkDomainsForm">
+                    <div class="mb-3">
+                        <label for="modal-domains" class="form-label">Domain List</label>
+                        <textarea class="form-control" id="modal-domains" name="domains" rows="6" placeholder="Enter multiple domains (one per line, or comma-separated)" required></textarea>
+                        <div class="form-text">Separate by newlines, commas, or spaces</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="bulkDomainsSubmit">
+                    <i class="bi bi-plus-lg me-1"></i> Add Domains
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Certificate Details Modal -->
+<div class="modal fade" id="certDetailsModal" tabindex="-1" aria-labelledby="certDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="certDetailsModalLabel">Certificate Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table cert-details-table">
+                    <tbody>
+                        <tr>
+                            <th>Status</th>
+                            <td id="cert-status"></td>
+                        </tr>
+                        <tr>
+                            <th>Days Remaining</th>
+                            <td id="cert-days"></td>
+                        </tr>
+                        <tr>
+                            <th>Expiry Date</th>
+                            <td id="cert-expiry"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="refresh-cert-btn">
+                    <i class="bi bi-arrow-repeat me-1"></i> Refresh Now
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Modal Scripts -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add Domain Modal
+        const addDomainModal = document.getElementById('addDomainModal');
+        const addDomainSubmit = document.getElementById('addDomainSubmit');
+        const addDomainForm = document.getElementById('addDomainForm');
+
+        // Bulk Domains Modal
+        const bulkDomainsModal = document.getElementById('addBulkDomainsModal');
+        const bulkDomainsSubmit = document.getElementById('bulkDomainsSubmit');
+        const bulkDomainsForm = document.getElementById('bulkDomainsForm');
+
+        // Fix for modal backdrop issue
+        if (addDomainModal) {
+            addDomainModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (bulkDomainsModal) {
+            bulkDomainsModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (addDomainSubmit && addDomainForm) {
+            addDomainSubmit.addEventListener('click', function() {
+                // Submit the form
+                addDomainForm.submit();
+            });
+        }
+
+        if (bulkDomainsSubmit && bulkDomainsForm) {
+            bulkDomainsSubmit.addEventListener('click', function() {
+                // Submit the form
+                bulkDomainsForm.submit();
+            });
+        }
+
+        // Certificate Details Modal
+        const certDetailsModal = document.getElementById('certDetailsModal');
+        const refreshCertBtn = document.getElementById('refresh-cert-btn');
+        let currentDomain = '';
+
+        certDetailsModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            currentDomain = button.getAttribute('data-domain');
+            const status = button.getAttribute('data-status');
+            const days = button.getAttribute('data-days');
+            const expiry = button.getAttribute('data-expiry');
+
+            // Update modal content
+            document.getElementById('cert-status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            document.getElementById('cert-days').textContent = days + ' days';
+            document.getElementById('cert-expiry').textContent = expiry;
+
+            // Add status class to status cell
+            const statusCell = document.getElementById('cert-status');
+            statusCell.className = ''; // Clear existing classes
+            statusCell.classList.add('status-' + status);
+        });
+
+        if (refreshCertBtn) {
+            refreshCertBtn.addEventListener('click', function() {
+                if (!currentDomain) return;
+
+                // Show loading state
+                refreshCertBtn.disabled = true;
+                refreshCertBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Refreshing...';
+
+                // Call API to refresh certificate
+                fetch(`/api/ssl/${currentDomain}/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update modal with new data
+                        const status = data.data.status;
+                        document.getElementById('cert-status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                        document.getElementById('cert-days').textContent = data.data.days_remaining + ' days';
+                        document.getElementById('cert-expiry').textContent = data.data.expiry_date;
+
+                        // Update status class
+                        const statusCell = document.getElementById('cert-status');
+                        statusCell.className = ''; // Clear existing classes
+                        statusCell.classList.add('status-' + status);
+
+                        // Show success message
+                        alert('Certificate refreshed successfully');
+
+                        // Reload the page to update the table
+                        window.location.reload();
+                    } else {
+                        alert('Error refreshing certificate: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error refreshing certificate');
+                })
+                .finally(() => {
+                    // Reset button state
+                    refreshCertBtn.disabled = false;
+                    refreshCertBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh Now';
+                });
+            });
+        }
+    });
+</script>
+{% endblock %}

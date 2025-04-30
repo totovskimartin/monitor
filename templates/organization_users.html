@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">Members in {{ organization.name }}</h1>
+        <div>
+            <a href="{{ url_for('organizations') }}" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-arrow-left"></i> Back to Organizations
+            </a>
+            <a href="{{ url_for('add_organization_user', org_id=organization.id) }}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Add Members
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            {% if users %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user_item in users %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">
+                                        <i class="bi bi-person"></i>
+                                    </span>
+                                    <span>{{ user_item.username }}</span>
+                                    {% if user_item.is_admin %}
+                                    <span class="badge bg-danger ms-2">Admin</span>
+                                    {% endif %}
+                                    {% if user.id == user_item.id %}
+                                    <span class="badge bg-primary ms-2">You</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>{{ user_item.email }}</td>
+                            <td>
+                                {% if user.id != user_item.id %}
+                                <form action="{{ url_for('update_organization_user_role', org_id=organization.id, user_id=user_item.id) }}" method="post" class="d-flex align-items-center">
+                                    <select name="role" class="form-select form-select-sm" style="width: auto;">
+                                        <option value="member" {% if user_item.role == 'member' %}selected{% endif %}>Member</option>
+                                        <option value="admin" {% if user_item.role == 'admin' %}selected{% endif %}>Admin</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-sm btn-outline-primary ms-2">Update</button>
+                                </form>
+                                {% else %}
+                                <span class="badge bg-{{ 'primary' if user_item.role == 'admin' else 'secondary' }}">
+                                    {{ user_item.role|title }}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.id != user_item.id %}
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#removeUserModal{{ user_item.id }}">
+                                    <i class="bi bi-person-x"></i> Remove
+                                </button>
+
+                                <!-- Remove User Modal -->
+                                <div class="modal fade" id="removeUserModal{{ user_item.id }}" tabindex="-1" aria-labelledby="removeUserModalLabel{{ user_item.id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="removeUserModalLabel{{ user_item.id }}">Confirm Remove</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p>Are you sure you want to remove <strong>{{ user_item.username }}</strong> from the organization <strong>{{ organization.name }}</strong>?</p>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <form action="{{ url_for('remove_organization_user', org_id=organization.id, user_id=user_item.id) }}" method="post">
+                                                    <button type="submit" class="btn btn-danger">Remove Member</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="text-muted">Cannot remove yourself</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <p class="mb-0">No users in this organization.</p>
+                <a href="{{ url_for('add_organization_user', org_id=organization.id) }}" class="btn btn-primary mt-3">
+                    <i class="bi bi-plus-lg"></i> Add Members
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

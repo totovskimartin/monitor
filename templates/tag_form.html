@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h1 class="h4 mb-0">{{ title }}</h1>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('create_tag', org_id=organization.id) if title == 'Create Tag' else url_for('edit_tag', org_id=organization.id, tag_id=tag.id) }}">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Tag Name</label>
+                            <input type="text" class="form-control" id="name" name="name" value="{{ tag.name if tag else '' }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="color" class="form-label">Color</label>
+                            <input type="color" class="form-control form-control-color" id="color" name="color" value="{{ tag.color if tag else '#6c757d' }}">
+                            <div class="form-text">Choose a color for this tag.</div>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('organization_tags', org_id=organization.id) }}" class="btn btn-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary">{{ 'Update' if tag else 'Create' }}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

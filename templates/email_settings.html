@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold mb-4">Email Notification Settings</h1>
+    </div>
+</div>
+
+<!-- Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-envelope-gear me-2"></i>Configure Email Notifications
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Configure email settings to receive notifications when certificates are about to expire.
+                    You will receive an email when a certificate is within the warning threshold days of expiration.
+                </p>
+
+                <form method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label for="smtp_server" class="form-label">SMTP Server</label>
+                                <input type="text" class="form-control" id="smtp_server" name="smtp_server" value="{{ settings.smtp_server }}" required>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="smtp_port" class="form-label">SMTP Port</label>
+                                <input type="number" class="form-control" id="smtp_port" name="smtp_port" value="{{ settings.smtp_port }}" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="smtp_username" class="form-label">SMTP Username</label>
+                        <input type="email" class="form-control" id="smtp_username" name="smtp_username" value="{{ settings.smtp_username }}" required>
+                        <div class="form-text">Usually your email address</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="smtp_password" class="form-label">SMTP Password</label>
+                        <input type="password" class="form-control" id="smtp_password" name="smtp_password" value="{{ settings.smtp_password }}" required>
+                        <div class="form-text">Your email password or app-specific password</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notification_email" class="form-label">Notification Email</label>
+                        <input type="email" class="form-control" id="notification_email" name="notification_email" value="{{ settings.notification_email }}" required>
+                        <div class="form-text">Where to send certificate expiry notifications</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="warning_threshold_days" class="form-label">Warning Threshold (days)</label>
+                        <input type="number" class="form-control" id="warning_threshold_days" name="warning_threshold_days" value="{{ settings.warning_threshold_days }}" required>
+                        <div class="form-text">Send notifications when certificates are this many days from expiring</div>
+                    </div>
+
+                    <div class="d-flex mt-4">
+                        <button type="submit" class="btn btn-primary me-2">
+                            <i class="bi bi-save me-1"></i> Save Settings
+                        </button>
+                        <a href="{{ url_for('ssl_certificates') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Back to SSL Certificates
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Help
+                </h5>
+            </div>
+            <div class="card-body">
+                <h6 class="fw-bold">Common SMTP Settings</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Provider</th>
+                                <th>Server</th>
+                                <th>Port</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Gmail</td>
+                                <td>smtp.gmail.com</td>
+                                <td>587</td>
+                            </tr>
+                            <tr>
+                                <td>Outlook</td>
+                                <td>smtp.office365.com</td>
+                                <td>587</td>
+                            </tr>
+                            <tr>
+                                <td>Yahoo</td>
+                                <td>smtp.mail.yahoo.com</td>
+                                <td>587</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="alert alert-info mt-3">
+                    <i class="bi bi-lightbulb me-2"></i>
+                    <small>For Gmail and some other providers, you may need to use an app-specific password instead of your regular password.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

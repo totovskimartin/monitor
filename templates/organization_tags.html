@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">Tags in {{ organization.name }}</h1>
+        <div>
+            <a href="{{ url_for('organizations') }}" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-arrow-left"></i> Back to Organizations
+            </a>
+            <a href="{{ url_for('create_tag', org_id=organization.id) }}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Create Tag
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            {% if tags %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Color</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tag in tags %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="badge me-2" style="background-color: {{ tag.color }}; width: 16px; height: 16px; border-radius: 4px;"></span>
+                                    <a href="{{ url_for('filter_domains_by_tag', tag_id=tag.id) }}" class="text-decoration-none">
+                                        {{ tag.name }}
+                                    </a>
+                                </div>
+                            </td>
+                            <td>{{ tag.color }}</td>
+                            <td>{{ tag.created_at }}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="{{ url_for('edit_tag', org_id=organization.id, tag_id=tag.id) }}" class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-pencil"></i> Edit
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#deleteTagModal{{ tag.id }}">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </button>
+                                </div>
+
+                                <!-- Delete Tag Modal -->
+                                <div class="modal fade" id="deleteTagModal{{ tag.id }}" tabindex="-1" aria-labelledby="deleteTagModalLabel{{ tag.id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="deleteTagModalLabel{{ tag.id }}">Confirm Delete</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p>Are you sure you want to delete the tag <strong>{{ tag.name }}</strong>?</p>
+                                                <p>This will remove the tag from all domains, but will not delete the domains themselves.</p>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <form action="{{ url_for('delete_tag', org_id=organization.id, tag_id=tag.id) }}" method="post">
+                                                    <button type="submit" class="btn btn-danger">Delete Tag</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <p class="mb-0">No tags found for this organization.</p>
+                <a href="{{ url_for('create_tag', org_id=organization.id) }}" class="btn btn-primary mt-3">
+                    <i class="bi bi-plus-lg"></i> Create Tag
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

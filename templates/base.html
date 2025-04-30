@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certifly</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-modern.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/domain-details.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <!-- Modern Sidebar -->
+        <aside class="modern-sidebar">
+            <!-- Logo -->
+            <div class="sidebar-logo">
+                <a href="{{ url_for('index') }}" class="logo-link">
+                    <i class="bi bi-shield-check"></i>
+                    <span class="logo-text">Certifly</span>
+                </a>
+                <!-- Remove the toggle button -->
+            </div>
+
+            <!-- Navigation Menu -->
+            <nav class="sidebar-nav">
+                <!-- Dashboard -->
+                <a href="{{ url_for('index') }}" class="nav-item {% if request.endpoint == 'index' %}active{% endif %}">
+                    <div class="nav-item-content">
+                        <i class="bi bi-speedometer2"></i>
+                        <span class="nav-text">Dashboard</span>
+                    </div>
+                </a>
+
+                <!-- Alerts Section -->
+                <div class="nav-section">
+                    <div class="nav-section-header {% if request.endpoint in ['alerts', 'archived_alerts'] %}active{% endif %}" data-bs-toggle="collapse" data-bs-target="#alertsSection">
+                        <div class="nav-item-content">
+                            <i class="bi bi-bell"></i>
+                            <span class="nav-text">
+                                Alerts
+                                {% if alerts_count > 0 %}
+                                <span class="alert-indicator"></span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <i class="bi bi-chevron-down nav-arrow"></i>
+                    </div>
+                    <div class="collapse nav-section-content {% if request.endpoint in ['alerts', 'archived_alerts'] %}show{% endif %}" id="alertsSection">
+                        <a href="{{ url_for('alerts') }}" class="nav-subitem {% if request.endpoint == 'alerts' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-bell-fill"></i>
+                                <span class="nav-text">Active alerts</span>
+                            </div>
+                            {% if alerts_count > 0 %}
+                            <span class="badge bg-danger rounded-pill alert-badge">{{ alerts_count }}</span>
+                            {% endif %}
+                        </a>
+                        <a href="{{ url_for('archived_alerts') }}" class="nav-subitem {% if request.endpoint == 'archived_alerts' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-archive"></i>
+                                <span class="nav-text">Archive</span>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+
+
+                <!-- Monitoring Section -->
+                <div class="nav-section">
+                    <div class="nav-section-header {% if request.endpoint in ['ssl_certificates', 'domain_expiry', 'ping_monitoring'] %}active{% endif %}" data-bs-toggle="collapse" data-bs-target="#monitoringSection">
+                        <div class="nav-item-content">
+                            <i class="bi bi-eye"></i>
+                            <span class="nav-text">Monitoring</span>
+                        </div>
+                        <i class="bi bi-chevron-down nav-arrow"></i>
+                    </div>
+                    <div class="collapse nav-section-content {% if request.endpoint in ['ssl_certificates', 'domain_expiry', 'ping_monitoring'] %}show{% endif %}" id="monitoringSection">
+                        <a href="{{ url_for('ssl_certificates') }}" class="nav-subitem {% if request.endpoint == 'ssl_certificates' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-shield-lock"></i>
+                                <span class="nav-text">SSL Certificates</span>
+                            </div>
+                        </a>
+                        <a href="{{ url_for('domain_expiry') }}" class="nav-subitem {% if request.endpoint == 'domain_expiry' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-calendar-event"></i>
+                                <span class="nav-text">Domain Expiry</span>
+                            </div>
+                        </a>
+                        <a href="{{ url_for('ping_monitoring') }}" class="nav-subitem {% if request.endpoint == 'ping_monitoring' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-activity"></i>
+                                <span class="nav-text">Ping Monitoring</span>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Reports Section -->
+                <div class="nav-section">
+                    <a href="{{ url_for('reports') }}" class="nav-item {% if request.endpoint in ['reports', 'generate_report', 'export_report'] %}active{% endif %}">
+                        <div class="nav-item-content">
+                            <i class="bi bi-graph-up"></i>
+                            <span class="nav-text">Reports</span>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Settings Section -->
+                <div class="nav-section">
+                    <div class="nav-section-header {% if request.endpoint in ['app_settings', 'notifications', 'user_admin', 'organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags'] %}active{% endif %}" data-bs-toggle="collapse" data-bs-target="#settingsSection">
+                        <div class="nav-item-content">
+                            <i class="bi bi-gear"></i>
+                            <span class="nav-text">Settings</span>
+                        </div>
+                        <i class="bi bi-chevron-down nav-arrow"></i>
+                    </div>
+                    <div class="collapse nav-section-content {% if request.endpoint in ['app_settings', 'notifications', 'user_admin', 'organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags'] %}show{% endif %}" id="settingsSection">
+                        <a href="{{ url_for('app_settings') }}" class="nav-subitem {% if request.endpoint == 'app_settings' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-sliders"></i>
+                                <span class="nav-text">General</span>
+                            </div>
+                        </a>
+                        <a href="{{ url_for('organizations') }}" class="nav-subitem {% if request.endpoint in ['organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags'] %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-building"></i>
+                                <span class="nav-text">Organizations</span>
+                            </div>
+                        </a>
+                        {% if user and user.is_admin %}
+                        <a href="{{ url_for('user_admin') }}" class="nav-subitem {% if request.endpoint == 'user_admin' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-people"></i>
+                                <span class="nav-text">Users</span>
+                            </div>
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('notifications') }}" class="nav-subitem {% if request.endpoint == 'notifications' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-bell"></i>
+                                <span class="nav-text">Notifications</span>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Sidebar Footer -->
+            <div class="sidebar-footer">
+                <button id="theme-toggle" class="theme-toggle" title="Toggle dark/light mode">
+                    <i class="bi bi-moon"></i>
+                </button>
+                <div class="copyright">
+                    <small>&copy; 2025 Certifly</small>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Wrapper -->
+        <div class="content-wrapper">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="container-fluid">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <!-- Mobile Menu Toggle -->
+                        <button class="mobile-menu-toggle d-lg-none">
+                            <i class="bi bi-list"></i>
+                        </button>
+
+                        <!-- Auto-refresh Control (Only on Dashboard) -->
+                        {% if request.endpoint == 'index' %}
+                        <div class="refresh-control">
+                            <div class="refresh-status">
+                                <div class="refresh-badge">
+                                    <span id="refresh-indicator" class="refresh-indicator paused"></span>
+                                    <span id="refresh-time-display">Off</span>
+                                </div>
+                                <button class="btn btn-sm refresh-settings-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end refresh-dropdown">
+                                    <div class="refresh-dropdown-header">
+                                        <span>Auto-refresh</span>
+                                    </div>
+                                    <div class="refresh-options">
+                                        <button class="refresh-option-btn" data-minutes="0">Off</button>
+                                        <button class="refresh-option-btn" data-minutes="1">1m</button>
+                                        <button class="refresh-option-btn" data-minutes="5">5m</button>
+                                        <button class="refresh-option-btn" data-minutes="15">15m</button>
+                                        <button class="refresh-option-btn" data-minutes="30">30m</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- User dropdown -->
+                        <div class="user-dropdown ms-auto">
+                            <div class="dropdown">
+                                <button class="btn btn-link dropdown-toggle user-dropdown-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-person-circle"></i>
+                                    {% if user %}
+                                        <span class="user-name">{{ user.username }}</span>
+                                    {% else %}
+                                        <span class="user-name">Account</span>
+                                    {% endif %}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    {% if user %}
+                                        {% if user.current_organization %}
+                                        <li>
+                                            <div class="dropdown-item-text">
+                                                <small class="text-muted">Organization:</small><br>
+                                                <span class="fw-bold">{{ user.current_organization.name }}</span>
+                                            </div>
+                                        </li>
+                                        <li><a class="dropdown-item" href="{{ url_for('organizations') }}"><i class="bi bi-building me-2"></i> Switch Organization</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        {% endif %}
+                                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle me-2"></i> Profile</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right me-2"></i> Logout</a></li>
+                                    {% else %}
+                                        <li><a class="dropdown-item" href="{{ url_for('login') }}"><i class="bi bi-box-arrow-in-right me-2"></i> Login</a></li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <div class="container-fluid">
+                    <!-- Modern Flash Messages -->
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            <div class="flash-messages-container">
+                                {% for category, message in messages %}
+                                    <div class="modern-alert {% if category == 'error' %}modern-alert-error{% else %}modern-alert-success{% endif %} fade show" role="alert">
+                                        <div class="modern-alert-icon">
+                                            {% if category == 'error' %}
+                                            <i class="bi bi-exclamation-circle"></i>
+                                            {% else %}
+                                            <i class="bi bi-check-circle"></i>
+                                            {% endif %}
+                                        </div>
+                                        <div class="modern-alert-content">{{ message }}</div>
+                                        <button type="button" class="modern-alert-close" data-bs-dismiss="alert" aria-label="Close">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+
+                    {% block content %}{% endblock %}
+                </div>
+            </main>
+
+            <!-- Footer -->
+            <footer class="app-footer">
+                <div class="container-fluid">
+                    <div class="d-flex justify-content-end align-items-center">
+                        <small>Version 1.0.0</small>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    {% if request.endpoint in ['ssl_certificates', 'domain_expiry', 'ping_monitoring'] %}
+    <script src="{{ url_for('static', filename='js/monitoring.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint == 'ssl_certificates' %}
+    <script src="{{ url_for('static', filename='js/ssl-certificates.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint == 'domain_expiry' %}
+    <script src="{{ url_for('static', filename='js/domain-expiry.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint == 'ping_monitoring' %}
+    <script src="{{ url_for('static', filename='js/ping-monitoring.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint == 'index' %}
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint in ['reports', 'generate_report', 'export_report'] %}
+    <script src="{{ url_for('static', filename='js/reports.js') }}"></script>
+    {% endif %}
+
+    <!-- Toast for copy to clipboard -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="copyToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <i class="bi bi-clipboard-check me-2 text-success"></i>
+                <strong class="me-auto">Copied!</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                Text copied to clipboard successfully.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

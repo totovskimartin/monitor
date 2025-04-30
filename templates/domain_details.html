@@ -1,0 +1,1092 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/uptime-charts.css') }}">
+<!-- Chart.js and its dependencies - updated to ensure compatibility -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.0.1/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
+<!-- Register the date adapter explicitly -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Make sure Chart.js is loaded before configuring it
+        if (typeof Chart !== 'undefined') {
+            // Explicitly register the Luxon adapter
+            Chart.register({
+                id: 'luxon',
+                _date: {
+                    parse: function(value) {
+                        return luxon.DateTime.fromMillis(value).valueOf();
+                    },
+                    format: function(time, format) {
+                        return luxon.DateTime.fromMillis(time).toFormat(format);
+                    },
+                    add: function(time, amount, unit) {
+                        return luxon.DateTime.fromMillis(time).plus({ [unit]: amount }).valueOf();
+                    },
+                    diff: function(max, min, unit) {
+                        return luxon.DateTime.fromMillis(max).diff(luxon.DateTime.fromMillis(min), unit).get(unit);
+                    },
+                    startOf: function(time, unit) {
+                        return luxon.DateTime.fromMillis(time).startOf(unit).valueOf();
+                    },
+                    endOf: function(time, unit) {
+                        return luxon.DateTime.fromMillis(time).endOf(unit).valueOf();
+                    }
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">Domain Details: {{ domain.name }}</h1>
+            <p class="dashboard-subtitle">Comprehensive monitoring information</p>
+        </div>
+        <div class="dashboard-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-primary me-2">
+                <i class="bi bi-arrow-left"></i> Back to Dashboard
+            </a>
+            <a href="https://{{ domain.name }}" target="_blank" class="btn btn-primary">
+                <i class="bi bi-box-arrow-up-right"></i> Visit Site
+            </a>
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Domain Overview Card -->
+    <div class="modern-card mb-4">
+        <div class="modern-card-header">
+            <h2 class="modern-card-title">
+                <i class="bi bi-info-circle"></i>
+                Domain Overview
+            </h2>
+            <div class="header-actions">
+                <button class="btn btn-outline-primary" id="refreshDomainBtn" data-domain-id="{{ domain.id }}">
+                    <i class="bi bi-arrow-repeat"></i> Refresh All
+                </button>
+            </div>
+        </div>
+        <div class="modern-card-body">
+            <div class="domain-overview-grid">
+                <!-- Domain Status -->
+                <div class="overview-item">
+                    <div class="overview-icon">
+                        <i class="bi bi-globe"></i>
+                    </div>
+                    <div class="overview-content">
+                        <h3 class="overview-title">Domain Status</h3>
+                        <div class="overview-value">
+                            <span class="ping-indicator ping-{{ domain.health_status }} me-2" title="Ping status: {{ domain.health_status }}"></span>
+                            {{ domain.health_status|capitalize }}
+                            {% if domain.health_status == 'up' and domain.response_time %}
+                                <span class="text-muted">({{ domain.response_time }} ms)</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SSL Certificate -->
+                <div class="overview-item">
+                    <div class="overview-icon">
+                        <i class="bi bi-shield-lock"></i>
+                    </div>
+                    <div class="overview-content">
+                        <h3 class="overview-title">SSL Certificate</h3>
+                        <div class="overview-value">
+                            {% if 'ssl' in domain.monitors %}
+                                {% if domain.ssl_status.status == 'valid' %}
+                                    Valid ({{ domain.ssl_status.days_remaining }} days) <i class="bi bi-check-circle-fill text-success"></i>
+                                {% elif domain.ssl_status.status == 'warning' %}
+                                    Warning ({{ domain.ssl_status.days_remaining }} days) <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                {% elif domain.ssl_status.status == 'expired' %}
+                                    Expired <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% elif domain.ssl_status.status == 'error' %}
+                                    Error <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% else %}
+                                    Unknown <i class="bi bi-question-circle-fill text-muted"></i>
+                                {% endif %}
+                            {% else %}
+                                <span class="status-indicator status-indicator-neutral"></span>
+                                Not monitored
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Domain Expiry -->
+                <div class="overview-item">
+                    <div class="overview-icon">
+                        <i class="bi bi-calendar-check"></i>
+                    </div>
+                    <div class="overview-content">
+                        <h3 class="overview-title">Domain Expiry</h3>
+                        <div class="overview-value">
+                            {% if 'expiry' in domain.monitors %}
+                                {% if domain.expiry_status == 'valid' %}
+                                    Valid ({{ domain.days_until_expiry }} days) <i class="bi bi-check-circle-fill text-success"></i>
+                                {% elif domain.expiry_status == 'warning' %}
+                                    Warning ({{ domain.days_until_expiry }} days) <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                {% elif domain.expiry_status == 'expired' %}
+                                    Expired <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% elif domain.expiry_status == 'error' %}
+                                    Error <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% else %}
+                                    Unknown <i class="bi bi-question-circle-fill text-muted"></i>
+                                {% endif %}
+                            {% else %}
+                                <span class="status-indicator status-indicator-neutral"></span>
+                                Not monitored
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Uptime -->
+                <div class="overview-item">
+                    <div class="overview-icon">
+                        <i class="bi bi-graph-up"></i>
+                    </div>
+                    <div class="overview-content">
+                        <h3 class="overview-title">Uptime (24h)</h3>
+                        <div class="overview-value">
+                            {% if domain.uptime_24h is not none %}
+                                <span class="{% if domain.uptime_24h >= 99 %}text-success{% elif domain.uptime_24h >= 90 %}text-warning{% else %}text-danger{% endif %}">
+                                    {{ domain.uptime_24h }}%
+                                </span>
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Uptime Statistics Card -->
+    <div class="modern-card mb-4">
+        <div class="modern-card-header">
+            <h2 class="modern-card-title">
+                <i class="bi bi-graph-up"></i>
+                Uptime Statistics
+            </h2>
+        </div>
+        <div class="modern-card-body">
+            <div class="uptime-stats-grid">
+                <!-- 24 Hour Uptime -->
+                <div class="uptime-stat-card">
+                    <h3 class="stat-card-title">24 Hour Uptime</h3>
+                    <div class="stat-card-value {% if domain.uptime_24h >= 99 %}text-success{% elif domain.uptime_24h >= 90 %}text-warning{% else %}text-danger{% endif %}">
+                        {{ domain.uptime_24h if domain.uptime_24h is not none else 'N/A' }}%
+                    </div>
+                </div>
+
+                <!-- 7 Day Uptime -->
+                <div class="uptime-stat-card">
+                    <h3 class="stat-card-title">7 Day Uptime</h3>
+                    <div class="stat-card-value {% if domain.uptime_7d >= 99 %}text-success{% elif domain.uptime_7d >= 90 %}text-warning{% else %}text-danger{% endif %}">
+                        {{ domain.uptime_7d if domain.uptime_7d is not none else 'N/A' }}%
+                    </div>
+                </div>
+
+                <!-- 30 Day Uptime -->
+                <div class="uptime-stat-card">
+                    <h3 class="stat-card-title">30 Day Uptime</h3>
+                    <div class="stat-card-value {% if domain.uptime_30d >= 99 %}text-success{% elif domain.uptime_30d >= 90 %}text-warning{% else %}text-danger{% endif %}">
+                        {{ domain.uptime_30d if domain.uptime_30d is not none else 'N/A' }}%
+                    </div>
+                </div>
+
+                <!-- Current Status -->
+                <div class="uptime-stat-card">
+                    <h3 class="stat-card-title">Current Status</h3>
+                    <div class="stat-card-value">
+                        <span class="ping-indicator ping-{{ domain.health_status }} me-2"></span>
+                        {{ domain.health_status|capitalize }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Uptime Timeline -->
+            <div class="uptime-timeline-container mt-4">
+                <h3 class="timeline-title">Last 12 Hours Uptime</h3>
+                <div class="uptime-timeline">
+                    <div class="uptime-chart-detailed">
+                        {% if domain.uptime_segments %}
+                            {% for status in domain.uptime_segments %}
+                                <div class="uptime-segment uptime-{{ status }}" title="{{ status|capitalize }}"></div>
+                            {% endfor %}
+                        {% else %}
+                            {% for i in range(12) %}
+                                <div class="uptime-segment uptime-unknown" title="Unknown"></div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Response Time Chart -->
+    <div class="modern-card mb-4">
+        <div class="modern-card-header">
+            <h2 class="modern-card-title">
+                <i class="bi bi-speedometer2"></i>
+                Response Time
+            </h2>
+            <div class="header-actions">
+                <div class="btn-group timeframe-selector" role="group" aria-label="Timeframe selection">
+                    <a href="{{ url_for('domain_details', domain_id=domain.id, timeframe=24) }}" class="btn btn-sm btn-outline-primary {% if request.args.get('timeframe', '24') == '24' %}active{% endif %}">24h</a>
+                    <a href="{{ url_for('domain_details', domain_id=domain.id, timeframe=168) }}" class="btn btn-sm btn-outline-primary {% if request.args.get('timeframe') == '168' %}active{% endif %}">7d</a>
+                    <a href="{{ url_for('domain_details', domain_id=domain.id, timeframe=720) }}" class="btn btn-sm btn-outline-primary {% if request.args.get('timeframe') == '720' %}active{% endif %}">30d</a>
+                </div>
+            </div>
+        </div>
+        <div class="modern-card-body">
+            <div class="response-chart-container">
+                <canvas id="responseTimeChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monitoring Details Grid -->
+    <div class="details-grid">
+        <!-- SSL Certificate Details -->
+        {% if 'ssl' in domain.monitors %}
+        <div class="modern-card">
+            <div class="modern-card-header">
+                <h2 class="modern-card-title">
+                    <i class="bi bi-shield-lock"></i>
+                    SSL Certificate Details
+                </h2>
+                <div class="header-actions">
+                    <button class="btn btn-outline-primary btn-sm" id="refreshSSLBtn" data-domain="{{ domain.name }}">
+                        <i class="bi bi-arrow-repeat"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="modern-card-body">
+                <div class="details-list">
+                    <div class="detail-item">
+                        <div class="detail-label">Status</div>
+                        <div class="detail-value">
+                            {% if domain.ssl_status.status == 'valid' %}
+                                Valid <i class="bi bi-check-circle-fill text-success"></i>
+                            {% elif domain.ssl_status.status == 'warning' %}
+                                Warning <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                            {% elif domain.ssl_status.status == 'expired' %}
+                                Expired <i class="bi bi-x-circle-fill text-danger"></i>
+                            {% elif domain.ssl_status.status == 'error' %}
+                                Error <i class="bi bi-x-circle-fill text-danger"></i>
+                            {% else %}
+                                Unknown <i class="bi bi-question-circle-fill text-muted"></i>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Expiry Date</div>
+                        <div class="detail-value">
+                            {% if domain.ssl_status.expiry_date %}
+                                {{ domain.ssl_status.expiry_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Days Remaining</div>
+                        <div class="detail-value status-with-indicator">
+                            <div class="status-text">
+                                {% if domain.ssl_status.days_remaining >= 0 %}
+                                    {{ domain.ssl_status.days_remaining }} days
+                                {% else %}
+                                    Expired
+                                {% endif %}
+                            </div>
+                            <div class="status-icon">
+                                {% if domain.ssl_status.status == 'valid' %}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                {% elif domain.ssl_status.status == 'warning' %}
+                                    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                {% elif domain.ssl_status.status == 'expired' or domain.ssl_status.status == 'error' %}
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% else %}
+                                    <i class="bi bi-question-circle-fill text-muted"></i>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Domain Expiry Details -->
+        {% if 'expiry' in domain.monitors %}
+        <div class="modern-card">
+            <div class="modern-card-header">
+                <h2 class="modern-card-title">
+                    <i class="bi bi-calendar-check"></i>
+                    Domain Expiry Details
+                </h2>
+                <div class="header-actions">
+                    <button class="btn btn-outline-primary btn-sm" id="refreshExpiryBtn" data-domain="{{ domain.name }}">
+                        <i class="bi bi-arrow-repeat"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="modern-card-body">
+                <div class="details-list">
+                    <div class="detail-item">
+                        <div class="detail-label">Status</div>
+                        <div class="detail-value">
+                            {% if domain.expiry_status == 'valid' %}
+                                Valid <i class="bi bi-check-circle-fill text-success"></i>
+                            {% elif domain.expiry_status == 'warning' %}
+                                Warning <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                            {% elif domain.expiry_status == 'expired' %}
+                                Expired <i class="bi bi-x-circle-fill text-danger"></i>
+                            {% elif domain.expiry_status == 'error' %}
+                                Error <i class="bi bi-x-circle-fill text-danger"></i>
+                            {% else %}
+                                Unknown <i class="bi bi-question-circle-fill text-muted"></i>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Expiry Date</div>
+                        <div class="detail-value">
+                            {% if domain.domain_status.expiry_date %}
+                                {{ domain.domain_status.expiry_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Days Remaining</div>
+                        <div class="detail-value status-with-indicator">
+                            <div class="status-text">
+                                {% if domain.days_until_expiry >= 0 %}
+                                    {{ domain.days_until_expiry }} days
+                                {% else %}
+                                    Expired
+                                {% endif %}
+                            </div>
+                            <div class="status-icon">
+                                {% if domain.expiry_status == 'valid' %}
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                {% elif domain.expiry_status == 'warning' %}
+                                    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                {% elif domain.expiry_status == 'expired' or domain.expiry_status == 'error' %}
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% else %}
+                                    <i class="bi bi-question-circle-fill text-muted"></i>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Registrar</div>
+                        <div class="detail-value">
+                            {% if domain.domain_status.registrar %}
+                                {{ domain.domain_status.registrar }}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Ping Monitoring Details -->
+        {% if 'ping' in domain.monitors %}
+        <div class="modern-card">
+            <div class="modern-card-header">
+                <h2 class="modern-card-title">
+                    <i class="bi bi-wifi"></i>
+                    Ping Monitoring Details
+                </h2>
+                <div class="header-actions">
+                    <button class="btn btn-outline-primary btn-sm" id="refreshPingBtn" data-domain="{{ domain.name }}">
+                        <i class="bi bi-arrow-repeat"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="modern-card-body">
+                <div class="details-list">
+                    <div class="detail-item">
+                        <div class="detail-label">Status</div>
+                        <div class="detail-value">
+                            <span class="ping-indicator ping-{{ domain.health_status }} me-2"></span>
+                            {{ domain.health_status|capitalize }}
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Response Time</div>
+                        <div class="detail-value">
+                            {% if domain.health_status == 'up' and domain.response_time %}
+                                {{ domain.response_time }} ms
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Uptime (24h)</div>
+                        <div class="detail-value">
+                            {% if domain.uptime_24h is not none %}
+                                <span class="{% if domain.uptime_24h >= 99 %}text-success{% elif domain.uptime_24h >= 90 %}text-warning{% else %}text-danger{% endif %}">
+                                    {{ domain.uptime_24h }}%
+                                </span>
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize response time chart if it exists
+        const responseTimeCtx = document.getElementById('responseTimeChart');
+
+        if (responseTimeCtx) {
+            // Get current timeframe from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentTimeframe = urlParams.get('timeframe') || '24';
+            let timeframeLabel = '24 Hours';
+            if (currentTimeframe === '168') {
+                timeframeLabel = '7 Days';
+            } else if (currentTimeframe === '720') {
+                timeframeLabel = '30 Days';
+            }
+
+            // Fetch response time data from API
+            fetch(`/api/ping/{{ domain.name }}/response_history?timeframe=${currentTimeframe}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        console.error('Error fetching response time data:', data.error);
+                        return;
+                    }
+
+                    const responseHistoryData = data.data;
+
+                    // Debug: Log the response data
+                    console.log('Response history data:', responseHistoryData);
+
+                    // Format the data for Chart.js
+                    const chartData = [];
+
+                    if (responseHistoryData && responseHistoryData.length > 0) {
+                        console.log('Processing response history data...', responseHistoryData);
+
+                        // Add debugging for the first item
+                        if (responseHistoryData[0]) {
+                            console.log('First item timestamp type:', typeof responseHistoryData[0].timestamp);
+                            console.log('First item timestamp value:', responseHistoryData[0].timestamp);
+                            console.log('First item response_time:', responseHistoryData[0].response_time);
+                        }
+
+                        responseHistoryData.forEach(item => {
+                            try {
+                                let timestamp;
+
+                                // Handle different timestamp formats
+                                if (typeof item.timestamp === 'number') {
+                                    // Already a number (milliseconds)
+                                    timestamp = item.timestamp;
+                                } else if (typeof item.timestamp === 'string') {
+                                    // Try to parse as a number first
+                                    const numTimestamp = parseInt(item.timestamp);
+                                    if (!isNaN(numTimestamp)) {
+                                        timestamp = numTimestamp;
+                                    } else {
+                                        // Try as ISO date string
+                                        const date = new Date(item.timestamp);
+                                        if (!isNaN(date.getTime())) {
+                                            timestamp = date.getTime();
+                                        } else {
+                                            console.error('Invalid timestamp format:', item.timestamp);
+                                            return; // Skip this item
+                                        }
+                                    }
+                                } else {
+                                    console.error('Unexpected timestamp type:', typeof item.timestamp);
+                                    return; // Skip this item
+                                }
+
+                                // Ensure response_time is a number
+                                const responseTime = parseFloat(item.response_time);
+                                if (isNaN(responseTime)) {
+                                    console.error('Invalid response time:', item.response_time);
+                                    return; // Skip this item
+                                }
+
+                                // Add valid data point
+                                chartData.push({
+                                    x: timestamp,
+                                    y: responseTime
+                                });
+                            } catch (error) {
+                                console.error('Error processing data point:', error, item);
+                            }
+                        });
+
+                        // Only create the chart if we have valid data points
+                        if (chartData.length > 0) {
+                            console.log(`Creating chart with ${chartData.length} data points`);
+                            createResponseTimeChart(chartData, timeframeLabel);
+                        } else {
+                            console.error('No valid data points found for chart');
+                            responseTimeCtx.parentNode.innerHTML = `
+                                <div class="no-data-message">
+                                    <i class="bi bi-exclamation-circle"></i>
+                                    <p>No valid response time data available for this timeframe.</p>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        // No data available
+                        responseTimeCtx.parentNode.innerHTML = `
+                            <div class="no-data-message">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <p>No response time data available for this timeframe.</p>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    responseTimeCtx.parentNode.innerHTML = `
+                        <div class="no-data-message">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <p>Error loading response time data: ${error.message}</p>
+                        </div>
+                    `;
+                });
+        }
+
+        // Function to create the response time chart
+        function createResponseTimeChart(chartData, timeframeLabel) {
+            console.log('Creating response time chart with data:', chartData);
+
+            const responseTimeCtx = document.getElementById('responseTimeChart');
+            if (!responseTimeCtx) {
+                console.error('Response time chart canvas element not found!');
+                return;
+            }
+
+            const ctx = responseTimeCtx.getContext('2d');
+
+            // Get current timeframe from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentTimeframe = urlParams.get('timeframe') || '24';
+
+            // Extract x and y values from chartData for a simpler chart approach
+            const timestamps = [];
+            const responseTimeValues = [];
+            const formattedLabels = [];
+
+            // Sort data by timestamp
+            chartData.sort((a, b) => a.x - b.x);
+
+            // Process data for chart
+            chartData.forEach(point => {
+                responseTimeValues.push(point.y);
+
+                // Format the timestamp for display
+                const date = new Date(point.x);
+                let formattedDate;
+
+                if (currentTimeframe === '24') {
+                    // For 24 hours, show hour:minute
+                    formattedDate = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } else if (currentTimeframe === '168') {
+                    // For 7 days, show day and hour
+                    formattedDate = date.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+                                   ' ' + date.toLocaleTimeString([], { hour: '2-digit' });
+                } else {
+                    // For 30 days, show just the date
+                    formattedDate = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                }
+
+                formattedLabels.push(formattedDate);
+                timestamps.push(point.x);
+            });
+
+            // Create the chart with a simpler configuration
+            const responseTimeChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: formattedLabels,
+                    datasets: [{
+                        label: `Response Time (ms) - Last ${timeframeLabel}`,
+                        data: responseTimeValues,
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointBackgroundColor: 'rgba(54, 162, 235, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Response Time (ms)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Response Time: ${context.raw} ms`;
+                                },
+                                title: function(context) {
+                                    if (context[0]) {
+                                        const index = context[0].dataIndex;
+                                        const timestamp = timestamps[index];
+                                        if (timestamp) {
+                                            const date = new Date(timestamp);
+                                            return date.toLocaleString();
+                                        }
+                                    }
+                                    return '';
+                                }
+                            },
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Refresh buttons functionality
+        const refreshDomainBtn = document.getElementById('refreshDomainBtn');
+        if (refreshDomainBtn) {
+            refreshDomainBtn.addEventListener('click', function() {
+                const domainId = this.getAttribute('data-domain-id');
+
+                // Show loading state
+                this.disabled = true;
+                this.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Refreshing...';
+
+                // Call API to refresh domain
+                // Get current timeframe from URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const timeframe = urlParams.get('timeframe') || '24';
+
+                fetch(`/api/domains/${domainId}/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Reload the page to show updated data, preserving the timeframe
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const timeframe = urlParams.get('timeframe') || '24';
+                        window.location.href = `${window.location.pathname}?timeframe=${timeframe}`;
+                    } else {
+                        alert(`Failed to refresh: ${data.error || 'Unknown error'}`);
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh All';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert(`An error occurred while refreshing: ${error.message}`);
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh All';
+                });
+            });
+        }
+
+        // SSL refresh button
+        const refreshSSLBtn = document.getElementById('refreshSSLBtn');
+        if (refreshSSLBtn) {
+            refreshSSLBtn.addEventListener('click', function() {
+                const domain = this.getAttribute('data-domain');
+
+                // Show loading state
+                this.disabled = true;
+                this.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Refreshing...';
+
+                // Call API to refresh SSL
+                fetch(`/api/ssl/${encodeURIComponent(domain)}/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Reload the page to show updated data, preserving the timeframe
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const timeframe = urlParams.get('timeframe') || '24';
+                        window.location.href = `${window.location.pathname}?timeframe=${timeframe}`;
+                    } else {
+                        alert(`Failed to refresh: ${data.error || 'Unknown error'}`);
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert(`An error occurred while refreshing: ${error.message}`);
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh';
+                });
+            });
+        }
+
+        // Domain expiry refresh button
+        const refreshExpiryBtn = document.getElementById('refreshExpiryBtn');
+        if (refreshExpiryBtn) {
+            refreshExpiryBtn.addEventListener('click', function() {
+                const domain = this.getAttribute('data-domain');
+
+                // Show loading state
+                this.disabled = true;
+                this.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Refreshing...';
+
+                // Call API to refresh domain expiry
+                fetch(`/api/expiry/${encodeURIComponent(domain)}/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Reload the page to show updated data, preserving the timeframe
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const timeframe = urlParams.get('timeframe') || '24';
+                        window.location.href = `${window.location.pathname}?timeframe=${timeframe}`;
+                    } else {
+                        alert(`Failed to refresh: ${data.error || 'Unknown error'}`);
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert(`An error occurred while refreshing: ${error.message}`);
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh';
+                });
+            });
+        }
+
+        // Ping refresh button
+        const refreshPingBtn = document.getElementById('refreshPingBtn');
+        if (refreshPingBtn) {
+            refreshPingBtn.addEventListener('click', function() {
+                const domain = this.getAttribute('data-domain');
+
+                // Show loading state
+                this.disabled = true;
+                this.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Refreshing...';
+
+                // Call API to refresh ping
+                fetch(`/api/ping/${encodeURIComponent(domain)}/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Reload the page to show updated data, preserving the timeframe
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const timeframe = urlParams.get('timeframe') || '24';
+                        window.location.href = `${window.location.pathname}?timeframe=${timeframe}`;
+                    } else {
+                        alert(`Failed to refresh: ${data.error || 'Unknown error'}`);
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert(`An error occurred while refreshing: ${error.message}`);
+                    this.disabled = false;
+                    this.innerHTML = '<i class="bi bi-arrow-repeat"></i> Refresh';
+                });
+            });
+        }
+    });
+</script>
+
+<style>
+    .dashboard-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .domain-overview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+    .overview-item {
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        background-color: var(--card-bg);
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .overview-icon {
+        font-size: 24px;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background-color: var(--primary-bg);
+        color: var(--primary);
+        margin-right: 15px;
+    }
+
+    .overview-content {
+        flex: 1;
+    }
+
+    .overview-title {
+        font-size: 14px;
+        margin-bottom: 5px;
+        color: var(--text-muted);
+    }
+
+    .overview-value {
+        font-size: 18px;
+        font-weight: 600;
+    }
+
+    .uptime-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+
+    .uptime-stat-card {
+        padding: 15px;
+        background-color: var(--card-bg);
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        text-align: center;
+    }
+
+    .stat-card-title {
+        font-size: 14px;
+        margin-bottom: 10px;
+        color: var(--text-muted);
+    }
+
+    .stat-card-value {
+        font-size: 24px;
+        font-weight: 700;
+    }
+
+    .uptime-timeline-container {
+        padding: 15px;
+        background-color: var(--card-bg);
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .timeline-title {
+        font-size: 16px;
+        margin-bottom: 15px;
+    }
+
+    .response-chart-container {
+        padding: 15px;
+        height: 350px;
+    }
+
+    .details-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 20px;
+    }
+
+    .details-list {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .detail-item {
+        display: flex;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .detail-item:last-child {
+        border-bottom: none;
+    }
+
+    .detail-label {
+        width: 40%;
+        font-weight: 500;
+        color: var(--text-muted);
+    }
+
+    .detail-value {
+        width: 60%;
+        font-weight: 500;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .spin {
+        animation: spin 1s linear infinite;
+    }
+
+    .no-data-message {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 300px;
+        color: var(--text-muted);
+    }
+
+    .no-data-message i {
+        font-size: 48px;
+        margin-bottom: 15px;
+        opacity: 0.5;
+    }
+
+    .no-data-message p {
+        font-size: 16px;
+    }
+
+    .timeframe-selector .btn {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+
+    .timeframe-selector .btn.active {
+        background-color: var(--primary);
+        color: white;
+    }
+
+    /* Status indicator styling */
+    .status-with-indicator {
+        display: flex;
+        align-items: center;
+    }
+
+    .status-text {
+        flex: 1;
+    }
+
+    .status-icon {
+        margin-left: 10px;
+        display: flex;
+        align-items: center;
+    }
+
+    .status-indicator {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .status-indicator-valid {
+        background-color: #28a745;
+    }
+
+    .status-indicator-warning {
+        background-color: #ffc107;
+    }
+
+    .status-indicator-expired, .status-indicator-error {
+        background-color: #dc3545;
+    }
+
+    .status-indicator-neutral {
+        background-color: #6c757d;
+    }
+</style>
+{% endblock %}

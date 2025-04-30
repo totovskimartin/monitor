@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Certifly{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reports.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-3">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="page-title">
+                <i class="bi bi-graph-up me-2"></i>Reports
+            </h1>
+            <p class="text-muted">Generate and export detailed reports about your monitored domains</p>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-3">
+            <!-- Report Selection Panel -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Report Options</h5>
+                </div>
+                <div class="card-body">
+                    <form id="report-form" action="{{ url_for('generate_report') }}" method="post">
+                        <div class="mb-3">
+                            <label for="report-type" class="form-label">Report Type</label>
+                            <select class="form-select" id="report-type" name="report_type">
+                                <option value="all_domains">All Domains Summary</option>
+                                <option value="ssl_status">SSL Certificate Status</option>
+                                <option value="domain_expiry">Domain Expiry Status</option>
+                                <option value="ping_uptime">Ping Uptime</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="time-range" class="form-label">Time Range</label>
+                            <select class="form-select" id="time-range" name="time_range">
+                                <option value="7">Last 7 days</option>
+                                <option value="30" selected>Last 30 days</option>
+                                <option value="90">Last 90 days</option>
+                                <option value="180">Last 6 months</option>
+                                <option value="365">Last year</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="organization" class="form-label">Organization</label>
+                            <select class="form-select" id="organization" name="organization_id">
+                                <option value="all">All Organizations</option>
+                                {% for org in organizations %}
+                                <option value="{{ org.id }}">{{ org.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="domains" class="form-label">Domains</label>
+                            <select class="form-select" id="domains" name="domain_ids" multiple>
+                                <option value="all" selected>All Domains</option>
+                                {% for domain in domains %}
+                                <option value="{{ domain.id }}">{{ domain.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Hold Ctrl/Cmd to select multiple domains</div>
+                        </div>
+
+                        <!-- Dynamic filters section that changes based on report type -->
+                        <div id="dynamic-filters" class="mb-3">
+                            <!-- SSL specific filters -->
+                            <div id="ssl-filters" class="filter-section d-none">
+                                <label class="form-label">SSL Certificate Status</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ssl-valid" name="ssl_status[]" value="valid" checked>
+                                    <label class="form-check-label" for="ssl-valid">Valid</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ssl-warning" name="ssl_status[]" value="warning" checked>
+                                    <label class="form-check-label" for="ssl-warning">Warning</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ssl-expired" name="ssl_status[]" value="expired" checked>
+                                    <label class="form-check-label" for="ssl-expired">Expired</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ssl-error" name="ssl_status[]" value="error" checked>
+                                    <label class="form-check-label" for="ssl-error">Error</label>
+                                </div>
+                            </div>
+
+                            <!-- Domain expiry specific filters -->
+                            <div id="domain-filters" class="filter-section d-none">
+                                <label class="form-label">Domain Expiry Status</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="domain-valid" name="domain_status[]" value="valid" checked>
+                                    <label class="form-check-label" for="domain-valid">Valid</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="domain-warning" name="domain_status[]" value="warning" checked>
+                                    <label class="form-check-label" for="domain-warning">Warning</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="domain-expired" name="domain_status[]" value="expired" checked>
+                                    <label class="form-check-label" for="domain-expired">Expired</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="domain-error" name="domain_status[]" value="error" checked>
+                                    <label class="form-check-label" for="domain-error">Error</label>
+                                </div>
+                            </div>
+
+                            <!-- Ping specific filters -->
+                            <div id="ping-filters" class="filter-section d-none">
+                                <label class="form-label">Ping Status</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ping-up" name="ping_status[]" value="up" checked>
+                                    <label class="form-check-label" for="ping-up">Up</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ping-down" name="ping_status[]" value="down" checked>
+                                    <label class="form-check-label" for="ping-down">Down</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ping-unknown" name="ping_status[]" value="unknown" checked>
+                                    <label class="form-check-label" for="ping-unknown">Unknown</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Include Data</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="include-charts" name="include_charts" checked>
+                                <label class="form-check-label" for="include-charts">
+                                    Charts and Graphs
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="include-tables" name="include_tables" checked>
+                                <label class="form-check-label" for="include-tables">
+                                    Data Tables
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="include-alerts" name="include_alerts" checked>
+                                <label class="form-check-label" for="include-alerts">
+                                    Alert History
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-bar-chart-fill me-1"></i> Generate Report
+                            </button>
+                            <div class="dropdown">
+                                <button class="btn btn-outline-secondary dropdown-toggle w-100" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-download me-1"></i> Export
+                                </button>
+                                <ul class="dropdown-menu w-100" aria-labelledby="exportDropdown">
+                                    <li><a class="dropdown-item" href="#" id="export-csv"><i class="bi bi-filetype-csv me-2"></i>CSV</a></li>
+                                    <li><a class="dropdown-item" href="#" id="export-pdf"><i class="bi bi-filetype-pdf me-2"></i>PDF</a></li>
+                                    <li><a class="dropdown-item" href="#" id="export-excel"><i class="bi bi-file-earmark-excel me-2"></i>Excel</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <!-- Report Content Area -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="report-title">Report Preview</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary" id="refresh-report">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body" id="report-content">
+                    <div class="text-center py-5" id="report-placeholder">
+                        <i class="bi bi-bar-chart-line display-1 text-muted"></i>
+                        <p class="mt-3 text-muted">Select report options and click "Generate Report" to view data</p>
+                    </div>
+
+                    <div id="report-data" class="d-none">
+                        <!-- Report Summary Section -->
+                        <div class="report-section mb-4">
+                            <h3 class="section-title">Summary</h3>
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="summary-card">
+                                        <div class="summary-title">Total Domains</div>
+                                        <div class="summary-value" id="total-domains">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="summary-card">
+                                        <div class="summary-title">Healthy</div>
+                                        <div class="summary-value text-success" id="healthy-domains">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="summary-card">
+                                        <div class="summary-title">Warnings</div>
+                                        <div class="summary-value text-warning" id="warning-domains">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="summary-card">
+                                        <div class="summary-title">Critical</div>
+                                        <div class="summary-value text-danger" id="critical-domains">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Charts Section -->
+                        <div class="report-section mb-4">
+                            <h3 class="section-title">Charts</h3>
+                            <div class="row">
+                                <div class="col-md-6 mb-4">
+                                    <div class="chart-container">
+                                        <canvas id="status-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-4">
+                                    <div class="chart-container">
+                                        <canvas id="trend-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Data Table Section -->
+                        <div class="report-section mb-4">
+                            <h3 class="section-title">Data Table</h3>
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover" id="report-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Domain</th>
+                                            <th>Status</th>
+                                            <th>Details</th>
+                                            <th>Last Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Table rows will be populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Alert History Section -->
+                        <div class="report-section">
+                            <h3 class="section-title">Alert History</h3>
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover" id="alerts-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Domain</th>
+                                            <th>Alert Type</th>
+                                            <th>Message</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Table rows will be populated dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Form submission handler
+        document.getElementById('report-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            generateReport();
+        });
+
+        // Export buttons
+        document.getElementById('export-csv').addEventListener('click', function() {
+            exportReport('csv');
+        });
+        document.getElementById('export-pdf').addEventListener('click', function() {
+            exportReport('pdf');
+        });
+        document.getElementById('export-excel').addEventListener('click', function() {
+            exportReport('excel');
+        });
+
+        // Refresh button
+        document.getElementById('refresh-report').addEventListener('click', function() {
+            generateReport();
+        });
+
+        // Report type change handler
+        document.getElementById('report-type').addEventListener('change', function() {
+            updateFormFields();
+        });
+
+        function updateFormFields() {
+            const reportType = document.getElementById('report-type').value;
+            // Update form fields based on report type
+            // This could show/hide certain options based on the report type
+        }
+
+        function generateReport() {
+            // Show loading state
+            document.getElementById('report-placeholder').innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-3 text-muted">Generating report...</p>';
+
+            // Get form data
+            const formData = new FormData(document.getElementById('report-form'));
+
+            // Make AJAX request to generate report
+            fetch('{{ url_for("generate_report") }}', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide placeholder and show report data
+                document.getElementById('report-placeholder').classList.add('d-none');
+                document.getElementById('report-data').classList.remove('d-none');
+
+                // Update report title
+                document.getElementById('report-title').textContent = data.title || 'Report Results';
+
+                // Update summary data
+                document.getElementById('total-domains').textContent = data.summary.total || '-';
+                document.getElementById('healthy-domains').textContent = data.summary.healthy || '-';
+                document.getElementById('warning-domains').textContent = data.summary.warning || '-';
+                document.getElementById('critical-domains').textContent = data.summary.critical || '-';
+
+                // Render charts
+                renderStatusChart(data.charts.status);
+                renderTrendChart(data.charts.trend);
+
+                // Populate data table
+                populateTable('report-table', data.table);
+
+                // Populate alerts table
+                populateTable('alerts-table', data.alerts);
+            })
+            .catch(error => {
+                console.error('Error generating report:', error);
+                document.getElementById('report-placeholder').innerHTML = '<i class="bi bi-exclamation-triangle text-danger display-1"></i><p class="mt-3 text-danger">Error generating report. Please try again.</p>';
+            });
+        }
+
+        function renderStatusChart(data) {
+            const ctx = document.getElementById('status-chart').getContext('2d');
+
+            // Destroy existing chart if it exists
+            if (window.statusChart) {
+                window.statusChart.destroy();
+            }
+
+            // Create new chart
+            window.statusChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        data: data.values,
+                        backgroundColor: [
+                            '#28a745', // Valid/Healthy
+                            '#ffc107', // Warning
+                            '#dc3545', // Critical/Error
+                            '#6c757d'  // Unknown
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Status Distribution'
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTrendChart(data) {
+            const ctx = document.getElementById('trend-chart').getContext('2d');
+
+            // Destroy existing chart if it exists
+            if (window.trendChart) {
+                window.trendChart.destroy();
+            }
+
+            // Create new chart
+            window.trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: data.datasets
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Trend Over Time'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function populateTable(tableId, data) {
+            const tableBody = document.getElementById(tableId).querySelector('tbody');
+            tableBody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td colspan="5" class="text-center">No data available</td>`;
+                tableBody.appendChild(row);
+                return;
+            }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = Object.values(item).map(value => `<td>${value}</td>`).join('');
+                tableBody.appendChild(row);
+            });
+        }
+
+        function exportReport(format) {
+            // Get form data
+            const formData = new FormData(document.getElementById('report-form'));
+            formData.append('export_format', format);
+
+            // Create a form and submit it to trigger file download
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '{{ url_for("export_report") }}';
+
+            for (const [key, value] of formData.entries()) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = value;
+                form.appendChild(input);
+            }
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+    });
+</script>
+{% endblock %}

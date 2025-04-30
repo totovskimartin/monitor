@@ -1,0 +1,170 @@
+/* Uptime Charts Styles */
+
+/* Uptime container - enhanced for better visualization */
+.uptime-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: 28px;
+}
+
+/* Uptime bar chart - modern design */
+.uptime-chart {
+    display: flex;
+    height: 100%;
+    width: 220px; /* Keep the same width */
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    position: relative;
+    background-color: rgba(0, 0, 0, 0.03);
+    padding: 3px;
+}
+
+[data-bs-theme="dark"] .uptime-chart {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Uptime bar segments */
+.uptime-segment {
+    height: 100%;
+    flex: 1;
+    position: relative;
+    transition: all 0.2s ease;
+    border-radius: 8px;
+    margin: 0 1px;
+}
+
+.uptime-segment:hover {
+    transform: scaleY(1.15);
+    z-index: 2;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Uptime segment colors with modern flat design */
+.uptime-up {
+    background-color: var(--success);
+}
+
+.uptime-down {
+    background-color: var(--danger);
+}
+
+.uptime-unknown {
+    background-color: var(--neutral);
+}
+
+/* Uptime percentage - modern styling */
+.uptime-percentage {
+    font-weight: 600;
+    font-size: 0.875rem;
+    min-width: 45px;
+    text-align: right;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+}
+
+/* Uptime percentage colors with background */
+.uptime-high {
+    color: var(--success);
+    background-color: rgba(var(--success-rgb), 0.1);
+}
+
+.uptime-medium {
+    color: var(--warning);
+    background-color: rgba(var(--warning-rgb), 0.1);
+}
+
+.uptime-low {
+    color: var(--danger);
+    background-color: rgba(var(--danger-rgb), 0.1);
+}
+
+/* Uptime tooltip */
+.uptime-tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.uptime-tooltip .tooltip-text {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border-color);
+    font-size: 0.75rem;
+}
+
+.uptime-tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Response time chart */
+.response-chart {
+    height: 40px;
+    width: 100%;
+    margin-top: 0.5rem;
+    position: relative;
+}
+
+.response-chart-container {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.response-chart-title {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+/* Domain details section */
+.domain-details {
+    padding: 1rem;
+    border-radius: var(--radius);
+    background-color: var(--card-bg);
+    margin-top: 0.5rem;
+    border: 1px solid var(--border-color);
+    display: none;
+}
+
+.domain-row.expanded .domain-details {
+    display: block;
+}
+
+/* Domain row styles */
+.domain-row {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.domain-row:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+[data-bs-theme="dark"] .domain-row:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Domain row expanded state */
+.domain-row.expanded {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+[data-bs-theme="dark"] .domain-row.expanded {
+    background-color: rgba(255, 255, 255, 0.02);
+}

@@ -1,0 +1,260 @@
+/* Additional styles for the alerts page */
+
+/* Restructure the timeline item to allow for better alignment */
+.timeline-item {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+    width: 100%; /* Ensure full width */
+}
+
+/* Style the timeline icon to be centered vertically */
+.timeline-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    width: 32px; /* Reduced size */
+    height: 32px; /* Reduced size */
+    flex-shrink: 0;
+    margin: 0; /* Remove margin to use the gap from timeline-item */
+}
+
+/* Ensure the timeline content takes up the full height and has consistent width */
+.timeline-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background-color: var(--card-bg);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem; /* Reduced padding */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    min-height: 60px; /* Reduced minimum height */
+    width: calc(100% - 190px); /* Adjusted width for smaller icon and actions */
+    max-width: calc(100% - 190px); /* Ensure it doesn't grow beyond this width */
+}
+
+/* Style the timeline header to be a flex container */
+.timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem; /* Reduced margin */
+}
+
+/* Style the timeline text */
+.timeline-text {
+    font-weight: 500;
+    line-height: 1.3; /* Reduced line height */
+    margin-bottom: 0.25rem; /* Reduced margin */
+}
+
+/* Style the timeline meta to be a flex container with centered items */
+.timeline-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem; /* Reduced gap */
+    font-size: 0.8rem; /* Smaller font */
+    color: var(--text-muted);
+    margin-top: 0.25rem; /* Reduced margin */
+    min-height: 24px; /* Reduced height */
+    padding-right: 0.5rem; /* Add some padding to prevent text from touching the edge */
+}
+
+/* Style individual meta items to be centered */
+.timeline-time,
+.timeline-domain,
+.timeline-meta .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px; /* Reduced height */
+    padding: 0 0.25rem;
+    border-radius: 4px;
+}
+
+/* Style the domain specifically */
+.timeline-domain {
+    font-weight: 500;
+    color: var(--text-primary);
+    background-color: rgba(0, 0, 0, 0.03);
+    padding: 0.25rem 0.5rem !important;
+}
+
+/* Style the badge to be properly centered */
+.timeline-meta .badge {
+    padding: 0.15rem 0.4rem !important; /* Reduced padding */
+    font-weight: 500;
+    vertical-align: middle;
+    height: 22px; /* Reduced height to match other meta items */
+}
+
+/* Style the time specifically */
+.timeline-time {
+    color: var(--text-muted);
+    background-color: rgba(0, 0, 0, 0.02);
+    padding: 0.25rem 0.5rem !important;
+}
+
+/* Style the timeline actions */
+.timeline-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem; /* Reduced gap */
+    width: 140px; /* Reduced width */
+    flex-shrink: 0;
+}
+
+/* Style the action buttons */
+.timeline-actions .btn {
+    padding: 0.25rem 0.5rem; /* Reduced padding */
+    font-size: 0.8rem; /* Smaller font */
+    width: 130px; /* Reduced width */
+    text-align: center;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem; /* Reduced gap */
+}
+
+/* Style the button icons */
+.timeline-actions .btn i {
+    font-size: 0.9rem; /* Smaller icon */
+}
+
+/* No connecting line - removed to prevent visual issues */
+
+/* Ensure proper spacing between timeline items */
+.timeline-item {
+    margin-bottom: 0.75rem; /* Reduced margin */
+    display: flex;
+    align-items: center;
+    gap: 0.75rem; /* Reduced gap */
+}
+
+.timeline-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Style the card header layout */
+.modern-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Style the filter button */
+.dropdown .btn-outline-secondary {
+    border-color: #dee2e6;
+    background-color: transparent;
+    font-size: 0.875rem;
+}
+
+.dropdown .btn-outline-secondary:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+[data-bs-theme="dark"] .dropdown .btn-outline-secondary:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Style the different types of alert icons */
+.timeline-icon.ssl {
+    background-color: rgba(79, 70, 229, 0.1);
+    color: #4f46e5;
+}
+
+.timeline-icon.domain {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+}
+
+.timeline-icon.ping {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.timeline-icon.error {
+    background-color: rgba(107, 114, 128, 0.1);
+    color: #6b7280;
+}
+
+/* Style for acknowledged items */
+.timeline-item.acknowledged .timeline-content {
+    opacity: 0.7;
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+[data-bs-theme="dark"] .timeline-item.acknowledged .timeline-content {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Delete button styles */
+.btn-outline-danger {
+    color: #dc3545;
+    border-color: #dc3545;
+}
+
+.btn-outline-danger:hover {
+    color: #fff;
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+[data-bs-theme="dark"] .btn-outline-danger {
+    color: #f77;
+    border-color: #f77;
+}
+
+[data-bs-theme="dark"] .btn-outline-danger:hover {
+    color: #000;
+    background-color: #f77;
+    border-color: #f77;
+}
+
+/* Alert Section Styles */
+.alert-section {
+    margin-bottom: 1.25rem; /* Reduced margin */
+    padding-bottom: 0.75rem; /* Reduced padding */
+}
+
+.alert-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.alert-section-title {
+    font-size: 1.1rem; /* Smaller font */
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    color: var(--text-color);
+    padding-bottom: 0.5rem; /* Reduced padding */
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.75rem; /* Reduced margin */
+}
+
+.alert-section-title i {
+    margin-right: 0.5rem;
+}
+
+/* Unacknowledged alerts section */
+.alert-section:first-child .alert-section-title {
+    color: var(--danger);
+}
+
+/* Acknowledged alerts section */
+.alert-section:last-child .alert-section-title {
+    color: var(--text-muted);
+}
+
+/* Dark mode adjustments */
+[data-bs-theme="dark"] .alert-section-title {
+    border-bottom-color: var(--dark-border-color);
+}

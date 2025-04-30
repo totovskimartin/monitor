@@ -1,0 +1,8 @@
+flask
+waitress
+flask-compress
+# Add any other dependencies your app needs, such as:
+# flask-login
+# sqlalchemy
+# requests
+# etc.

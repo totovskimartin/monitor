@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Alert Archive - Certifly{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="modern-card">
+        <div class="modern-card-header">
+            <div class="d-flex align-items-center">
+                <h2 class="modern-card-title mb-0">
+                    <i class="bi bi-archive"></i>
+                    Alert Archive
+                </h2>
+                <div class="dropdown ms-3">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="alertFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-funnel"></i> Filter
+                    </button>
+                    <ul class="dropdown-menu" aria-labelledby="alertFilterDropdown">
+                        <li><a class="dropdown-item active" href="#" data-filter="all">All Actions</a></li>
+                        <li><a class="dropdown-item" href="#" data-filter="acknowledged">Acknowledged</a></li>
+                        <li><a class="dropdown-item" href="#" data-filter="unacknowledged">Unacknowledged</a></li>
+                        <li><a class="dropdown-item" href="#" data-filter="deleted">Deleted</a></li>
+                        <li><a class="dropdown-item" href="#" data-filter="restored">Restored</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" data-filter="ssl">SSL Certificate</a></li>
+                        <li><a class="dropdown-item" href="#" data-filter="domain">Domain Expiry</a></li>
+                        <li><a class="dropdown-item" href="#" data-filter="ping">Ping Status</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="btn-group">
+                    <form action="{{ url_for('restore_deleted_alerts') }}" method="POST" class="d-inline" id="restore-deleted-form">
+                        <button type="button" class="btn btn-sm btn-outline-info" id="restore-deleted-btn">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Restore All Deleted
+                        </button>
+                    </form>
+                    <a href="{{ url_for('alerts') }}" class="btn btn-sm btn-outline-primary ms-2">
+                        <i class="bi bi-bell"></i> Active alerts
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="modern-card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Domain</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Message</th>
+                            <th>Action</th>
+                            <th>User</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if alert_history %}
+                            {% for alert in alert_history %}
+                                <tr data-alert-type="{{ alert.type }}" data-alert-action="{{ alert.action }}">
+                                    <td>{{ alert.created_at }}</td>
+                                    <td>{{ alert.domain_name }}</td>
+                                    <td>
+                                        {% if alert.type == 'ssl' %}
+                                            <span class="badge bg-primary">SSL</span>
+                                        {% elif alert.type == 'domain' %}
+                                            <span class="badge bg-info">Domain</span>
+                                        {% elif alert.type == 'ping' %}
+                                            <span class="badge bg-secondary">Ping</span>
+                                        {% else %}
+                                            <span class="badge bg-dark">{{ alert.type }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if alert.status == 'warning' %}
+                                            <span class="badge bg-warning text-dark">Warning</span>
+                                        {% elif alert.status == 'expired' %}
+                                            <span class="badge bg-danger">Expired</span>
+                                        {% elif alert.status == 'error' %}
+                                            <span class="badge bg-danger">Error</span>
+                                        {% elif alert.status == 'down' %}
+                                            <span class="badge bg-danger">Down</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ alert.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ alert.message }}</td>
+                                    <td>
+                                        {% if alert.action == 'acknowledged' %}
+                                            <span class="badge bg-success">Acknowledged</span>
+                                        {% elif alert.action == 'unacknowledged' %}
+                                            <span class="badge bg-warning text-dark">Unacknowledged</span>
+                                        {% elif alert.action == 'deleted' %}
+                                            <span class="badge bg-danger">Deleted</span>
+                                        {% elif alert.action == 'restored' %}
+                                            <span class="badge bg-info">Restored</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ alert.action }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ alert.username }}</td>
+                                    <td>
+                                        {% if alert.action == 'deleted' %}
+                                            <form action="{{ url_for('restore_alert', alert_id=alert.alert_id) }}" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-sm btn-outline-info" title="Restore alert">
+                                                    <i class="bi bi-arrow-counterclockwise"></i> Restore
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center">
+                                    <div class="alert alert-info mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        No alert history found.
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if total_pages > 1 %}
+            <div class="d-flex justify-content-between align-items-center mt-4">
+                <div>
+                    Showing {{ (page - 1) * per_page + 1 }} to {{ [page * per_page, total_alerts] | min }} of {{ total_alerts }} entries
+                </div>
+                <nav aria-label="Alert history pagination">
+                    <ul class="pagination mb-0">
+                        <li class="page-item {% if not has_prev %}disabled{% endif %}">
+                            <a class="page-link" href="{{ url_for('archived_alerts', page=page-1) if has_prev else '#' }}" aria-label="Previous">
+                                <span aria-hidden="true">&laquo;</span>
+                            </a>
+                        </li>
+
+                        {% for p in range(1, total_pages + 1) %}
+                            {% if p == page %}
+                                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                            {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 1 and p <= page + 1) %}
+                                <li class="page-item"><a class="page-link" href="{{ url_for('archived_alerts', page=p) }}">{{ p }}</a></li>
+                            {% elif p == 4 and page > 5 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% elif p == total_pages - 3 and page < total_pages - 4 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+
+                        <li class="page-item {% if not has_next %}disabled{% endif %}">
+                            <a class="page-link" href="{{ url_for('archived_alerts', page=page+1) if has_next else '#' }}" aria-label="Next">
+                                <span aria-hidden="true">&raquo;</span>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Alert filtering functionality
+        const filterLinks = document.querySelectorAll('[data-filter]');
+        const alertRows = document.querySelectorAll('tbody tr');
+
+        filterLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                // Update active state
+                filterLinks.forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+
+                const filterValue = this.getAttribute('data-filter');
+
+                // Show/hide alerts based on filter
+                alertRows.forEach(row => {
+                    const alertType = row.getAttribute('data-alert-type');
+                    const alertAction = row.getAttribute('data-alert-action');
+
+                    let shouldShow = false;
+
+                    if (filterValue === 'all') {
+                        shouldShow = true;
+                    } else if (filterValue === 'acknowledged' || filterValue === 'unacknowledged' ||
+                               filterValue === 'deleted' || filterValue === 'restored') {
+                        shouldShow = alertAction === filterValue;
+                    } else {
+                        shouldShow = alertType === filterValue;
+                    }
+
+                    row.style.display = shouldShow ? '' : 'none';
+                });
+
+                // Show message if no alerts match filter
+                const visibleAlerts = Array.from(alertRows).filter(row => row.style.display !== 'none');
+                const tableBody = document.querySelector('tbody');
+                let noAlertsMessage = document.querySelector('.no-filter-match');
+
+                if (visibleAlerts.length === 0) {
+                    if (!noAlertsMessage) {
+                        const emptyRow = document.createElement('tr');
+                        emptyRow.className = 'no-filter-match';
+                        emptyRow.innerHTML = `
+                            <td colspan="8" class="text-center">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    No alerts match the selected filter.
+                                </div>
+                            </td>
+                        `;
+                        tableBody.appendChild(emptyRow);
+                    } else {
+                        noAlertsMessage.style.display = '';
+                    }
+                } else if (noAlertsMessage) {
+                    noAlertsMessage.style.display = 'none';
+                }
+
+                // Handle restore deleted alerts button
+                const restoreDeletedBtn = document.getElementById('restore-deleted-btn');
+                if (restoreDeletedBtn) {
+                    restoreDeletedBtn.addEventListener('click', function() {
+                        // Count deleted alerts
+                        const deletedAlerts = Array.from(alertRows).filter(row =>
+                            row.getAttribute('data-alert-action') === 'deleted' &&
+                            row.style.display !== 'none'
+                        );
+
+                        if (deletedAlerts.length === 0) {
+                            alert('There are no deleted alerts to restore.');
+                            return;
+                        }
+
+                        if (confirm(`Are you sure you want to restore all ${deletedAlerts.length} deleted alerts? This will make them visible again in the system.`)) {
+                            document.getElementById('restore-deleted-form').submit();
+                        }
+                    });
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

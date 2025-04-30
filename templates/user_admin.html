@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Certifly{% endblock %}
+
+{% block content %}
+<style>
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+    }
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        transition: all 0.2s ease;
+        background-color: var(--bs-tertiary-bg);
+        color: var(--bs-secondary-color);
+    }
+    .action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 3px 5px rgba(0,0,0,0.2);
+    }
+    .action-btn i {
+        font-size: 1rem;
+    }
+    .action-btn.edit-btn:hover {
+        background-color: rgba(13, 110, 253, 0.2);
+        color: #0d6efd;
+    }
+    .action-btn.password-btn:hover {
+        background-color: rgba(108, 117, 125, 0.2);
+        color: var(--bs-body-color);
+    }
+    .action-btn.delete-btn:hover {
+        background-color: rgba(220, 53, 69, 0.2);
+        color: #dc3545;
+    }
+
+    /* Modern Add User button */
+    .add-user-btn {
+        background-color: #4361ee;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 5px rgba(67, 97, 238, 0.3);
+    }
+    .add-user-btn:hover {
+        background-color: #3a56d4;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(67, 97, 238, 0.4);
+        color: white;
+    }
+    .add-user-btn i {
+        font-size: 1.1rem;
+        margin-right: 8px;
+    }
+
+    /* Filter styles */
+    #userFilterStats {
+        font-size: 0.875rem;
+        padding: 6px 0;
+    }
+    #clearFiltersBtn {
+        font-size: 0.875rem;
+        padding: 4px 10px;
+        border-radius: 4px;
+    }
+
+    /* Modern table styling */
+    .modern-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: 100%;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .modern-table thead th {
+        background-color: var(--bs-dark-bg-subtle);
+        color: var(--bs-body-color);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+        padding: 12px 15px;
+        border-bottom: 1px solid var(--bs-border-color);
+    }
+    .modern-table tbody tr {
+        transition: all 0.2s ease;
+    }
+    .modern-table tbody tr:hover {
+        background-color: var(--bs-tertiary-bg);
+    }
+    .modern-table td {
+        padding: 12px 15px;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--bs-border-color);
+    }
+    .modern-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    /* Modern card styling */
+    .modern-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+    .modern-card .card-body {
+        padding: 1.5rem;
+    }
+</style>
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="h3 mb-0">Users</h1>
+                <button type="button" class="add-user-btn" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                    <i class="bi bi-person-plus"></i> Add User
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" id="userSearchInput" placeholder="Search users by name, email, or role...">
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="d-flex gap-2">
+                <select class="form-select" id="userStatusFilter">
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+                <select class="form-select" id="userRoleFilter">
+                    <option value="all">All Roles</option>
+                    <option value="admin">Admin</option>
+                    <option value="member">Member</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="card modern-card">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div id="userFilterStats" class="text-muted small">
+                    Showing all users
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clearFiltersBtn">
+                        <i class="bi bi-x-circle me-1"></i>Clear Filters
+                    </button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover modern-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Organizations</th>
+                            <th>Last Login</th>
+                            <th>Created</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user_item in users %}
+                        <tr>
+                            <td>{{ user_item.username }}</td>
+                            <td>{{ user_item.email }}</td>
+                            <td>
+                                {% if user_item.is_admin %}
+                                <span class="badge bg-primary">Admin</span>
+                                {% else %}
+                                <span class="badge bg-secondary">User</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user_item.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user_item.organizations %}
+                                    {% for org in user_item.organizations %}
+                                        <div class="d-inline-block me-1 mb-1">
+                                            <span class="badge {% if org.role == 'admin' %}bg-primary{% else %}bg-secondary{% endif %}"
+                                                  title="{{ org.name }} ({{ org.role }})">
+                                                {{ org.name }}
+                                                {% if org.role == 'admin' %}
+                                                <i class="bi bi-star-fill ms-1" style="font-size: 0.7rem;"></i>
+                                                {% endif %}
+                                            </span>
+                                        </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">None</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user_item.last_login %}
+                                {{ user_item.last_login|datetime }}
+                                {% else %}
+                                Never
+                                {% endif %}
+                            </td>
+                            <td>{{ user_item.created_at|datetime }}</td>
+                            <td class="text-center">
+                                <div class="action-buttons">
+                                    <button type="button" class="action-btn edit-btn"
+                                            data-bs-toggle="modal" data-bs-target="#editUserModal"
+                                            data-user-id="{{ user_item.id }}"
+                                            data-username="{{ user_item.username }}"
+                                            data-email="{{ user_item.email }}"
+                                            data-is-admin="{{ user_item.is_admin }}"
+                                            data-is-active="{{ user_item.is_active }}"
+                                            title="Edit User">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+
+                                    {% if user and user.id != user_item.id %}
+                                    <button type="button" class="action-btn password-btn"
+                                            data-bs-toggle="modal" data-bs-target="#resetPasswordModal"
+                                            data-user-id="{{ user_item.id }}"
+                                            data-username="{{ user_item.username }}"
+                                            title="Reset Password">
+                                        <i class="bi bi-key"></i>
+                                    </button>
+
+                                    <button type="button" class="action-btn delete-btn"
+                                            data-bs-toggle="modal" data-bs-target="#deleteUserModal"
+                                            data-user-id="{{ user_item.id }}"
+                                            data-username="{{ user_item.username }}"
+                                            title="Delete User">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addUserModalLabel">Add New User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('user_admin_add') }}" method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label">Confirm Password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin" value="1">
+                        <label class="form-check-label" for="is_admin">Admin User</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editUserModalLabel">Edit User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('user_admin_edit') }}" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" id="edit_user_id" name="user_id">
+                    <div class="mb-3">
+                        <label for="edit_username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="edit_username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="edit_email" name="email" required>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="edit_is_admin" name="is_admin" value="1">
+                        <label class="form-check-label" for="edit_is_admin">Admin User</label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="edit_is_active" name="is_active" value="1">
+                        <label class="form-check-label" for="edit_is_active">Active</label>
+                    </div>
+
+                    <hr>
+                    <h6 class="mb-3">Organization Memberships</h6>
+                    <div id="user-organizations-container">
+                        <!-- Organization memberships will be loaded here -->
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="add_organization" class="form-label">Add to Organization</label>
+                        <div class="input-group">
+                            <select class="form-select" id="add_organization" name="add_organization">
+                                <option value="">Select Organization...</option>
+                                {% for org in organizations %}
+                                <option value="{{ org.id }}">{{ org.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <select class="form-select" id="add_organization_role" name="add_organization_role">
+                                <option value="member">Member</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <button class="btn btn-outline-primary" type="button" id="add_to_organization_btn">
+                                <i class="bi bi-plus-lg"></i> Add
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-labelledby="resetPasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resetPasswordModalLabel">Reset Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('user_admin_reset_password') }}" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" id="reset_user_id" name="user_id">
+                    <p>Reset password for user: <strong id="reset_username"></strong></p>
+                    <div class="mb-3">
+                        <label for="new_password" class="form-label">New Password</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm_new_password" class="form-label">Confirm New Password</label>
+                        <input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Reset Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete User Modal -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1" aria-labelledby="deleteUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteUserModalLabel">Delete User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('user_admin_delete') }}" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" id="delete_user_id" name="user_id">
+                    <p>Are you sure you want to delete user: <strong id="delete_username"></strong>?</p>
+                    <p class="text-danger">This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Edit User Modal
+        const editUserModal = document.getElementById('editUserModal');
+        if (editUserModal) {
+            editUserModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const userId = button.getAttribute('data-user-id');
+                const username = button.getAttribute('data-username');
+                const email = button.getAttribute('data-email');
+                const isAdmin = button.getAttribute('data-is-admin') === 'True' || button.getAttribute('data-is-admin') === '1';
+                const isActive = button.getAttribute('data-is-active') === 'True' || button.getAttribute('data-is-active') === '1';
+
+                const modal = this;
+                modal.querySelector('#edit_user_id').value = userId;
+                modal.querySelector('#edit_username').value = username;
+                modal.querySelector('#edit_email').value = email;
+                modal.querySelector('#edit_is_admin').checked = isAdmin;
+                modal.querySelector('#edit_is_active').checked = isActive;
+
+                // Load user's organizations
+                loadUserOrganizations(userId);
+            });
+        }
+
+        // Reset Password Modal
+        const resetPasswordModal = document.getElementById('resetPasswordModal');
+        if (resetPasswordModal) {
+            resetPasswordModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const userId = button.getAttribute('data-user-id');
+                const username = button.getAttribute('data-username');
+
+                const modal = this;
+                modal.querySelector('#reset_user_id').value = userId;
+                modal.querySelector('#reset_username').textContent = username;
+            });
+        }
+
+        // Delete User Modal
+        const deleteUserModal = document.getElementById('deleteUserModal');
+        if (deleteUserModal) {
+            deleteUserModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const userId = button.getAttribute('data-user-id');
+                const username = button.getAttribute('data-username');
+
+                const modal = this;
+                modal.querySelector('#delete_user_id').value = userId;
+                modal.querySelector('#delete_username').textContent = username;
+            });
+        }
+
+        // Password validation for Add User form
+        const addUserForm = document.querySelector('#addUserModal form');
+        if (addUserForm) {
+            addUserForm.addEventListener('submit', function(event) {
+                const password = document.getElementById('password').value;
+                const confirmPassword = document.getElementById('confirm_password').value;
+
+                if (password !== confirmPassword) {
+                    event.preventDefault();
+                    alert('Passwords do not match');
+                }
+            });
+        }
+
+        // Password validation for Reset Password form
+        const resetPasswordForm = document.querySelector('#resetPasswordModal form');
+        if (resetPasswordForm) {
+            resetPasswordForm.addEventListener('submit', function(event) {
+                const newPassword = document.getElementById('new_password').value;
+                const confirmNewPassword = document.getElementById('confirm_new_password').value;
+
+                if (newPassword !== confirmNewPassword) {
+                    event.preventDefault();
+                    alert('Passwords do not match');
+                }
+            });
+        }
+
+        // Add to organization button
+        const addToOrgBtn = document.getElementById('add_to_organization_btn');
+        if (addToOrgBtn) {
+            addToOrgBtn.addEventListener('click', function() {
+                const userId = document.getElementById('edit_user_id').value;
+                const orgId = document.getElementById('add_organization').value;
+                const role = document.getElementById('add_organization_role').value;
+
+                if (!orgId) {
+                    alert('Please select an organization');
+                    return;
+                }
+
+                addUserToOrganization(userId, orgId, role);
+            });
+        }
+    });
+
+    // Function to load user's organizations
+    function loadUserOrganizations(userId) {
+        const container = document.getElementById('user-organizations-container');
+
+        // Make AJAX request to get user's organizations
+        fetch(`/api/users/${userId}/organizations`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.organizations && data.organizations.length > 0) {
+                    let html = '<div class="list-group mb-3">';
+
+                    data.organizations.forEach(org => {
+                        html += `
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="fw-bold">${org.name}</span>
+                                    <span class="badge ${org.role === 'admin' ? 'bg-primary' : 'bg-secondary'} ms-2">${org.role}</span>
+                                </div>
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                        Role
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item ${org.role === 'member' ? 'active' : ''}" href="#"
+                                               onclick="updateUserOrganizationRole(${userId}, ${org.id}, 'member'); return false;">Member</a></li>
+                                        <li><a class="dropdown-item ${org.role === 'admin' ? 'active' : ''}" href="#"
+                                               onclick="updateUserOrganizationRole(${userId}, ${org.id}, 'admin'); return false;">Admin</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item text-danger" href="#"
+                                               onclick="removeUserFromOrganization(${userId}, ${org.id}); return false;">Remove</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div class="alert alert-info">User is not a member of any organization.</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading organizations:', error);
+                container.innerHTML = '<div class="alert alert-danger">Error loading organizations. Please try again.</div>';
+            });
+    }
+
+    // Function to add user to organization
+    function addUserToOrganization(userId, orgId, role) {
+        fetch('/api/users/add_to_organization', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ user_id: userId, org_id: orgId, role: role })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Reload user's organizations
+                loadUserOrganizations(userId);
+                // Reset the organization select
+                document.getElementById('add_organization').value = '';
+            } else {
+                alert(data.message || 'Error adding user to organization');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding user to organization:', error);
+            alert('Error adding user to organization. Please try again.');
+        });
+    }
+
+    // Function to update user's role in organization
+    function updateUserOrganizationRole(userId, orgId, role) {
+        fetch('/api/users/update_organization_role', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ user_id: userId, org_id: orgId, role: role })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Reload user's organizations
+                loadUserOrganizations(userId);
+            } else {
+                alert(data.message || 'Error updating user role');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating user role:', error);
+            alert('Error updating user role. Please try again.');
+        });
+    }
+
+    // Function to remove user from organization
+    function removeUserFromOrganization(userId, orgId) {
+        if (!confirm('Are you sure you want to remove this user from the organization?')) {
+            return;
+        }
+
+        fetch('/api/users/remove_from_organization', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ user_id: userId, org_id: orgId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Reload user's organizations
+                loadUserOrganizations(userId);
+            } else {
+                alert(data.message || 'Error removing user from organization');
+            }
+        })
+        .catch(error => {
+            console.error('Error removing user from organization:', error);
+            alert('Error removing user from organization. Please try again.');
+        });
+    }
+
+    // Function to get CSRF token
+    function getCsrfToken() {
+        // Try to get CSRF token from meta tag
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        if (metaTag) {
+            return metaTag.getAttribute('content');
+        }
+
+        // If no meta tag, try to get from cookie
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.startsWith('csrf_token=')) {
+                return cookie.substring('csrf_token='.length, cookie.length);
+            }
+        }
+
+        return '';
+    }
+
+    // User filtering functionality
+    function filterUsers() {
+        const searchValue = document.getElementById('userSearchInput').value.toLowerCase();
+        const statusFilter = document.getElementById('userStatusFilter').value;
+        const roleFilter = document.getElementById('userRoleFilter').value;
+        const userRows = document.querySelectorAll('table.modern-table tbody tr');
+
+        let visibleCount = 0;
+        const totalCount = userRows.length;
+
+        userRows.forEach(row => {
+            const userName = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
+            const userEmail = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+            const userRole = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+            const userStatus = row.querySelector('td:nth-child(4) .badge').textContent.toLowerCase();
+
+            // Check if row matches search text
+            const matchesSearch = userName.includes(searchValue) ||
+                                 userEmail.includes(searchValue) ||
+                                 userRole.includes(searchValue);
+
+            // Check if row matches status filter
+            const matchesStatus = statusFilter === 'all' ||
+                                 (statusFilter === 'active' && userStatus === 'active') ||
+                                 (statusFilter === 'inactive' && userStatus === 'inactive');
+
+            // Check if row matches role filter
+            const matchesRole = roleFilter === 'all' ||
+                               (roleFilter === 'admin' && userRole.includes('admin')) ||
+                               (roleFilter === 'member' && !userRole.includes('admin'));
+
+            // Show row only if it matches all filters
+            if (matchesSearch && matchesStatus && matchesRole) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        // Update filter stats
+        const statsElement = document.getElementById('userFilterStats');
+        if (visibleCount === totalCount) {
+            statsElement.textContent = `Showing all users (${totalCount})`;
+        } else {
+            statsElement.textContent = `Showing ${visibleCount} of ${totalCount} users`;
+        }
+
+        // Show/hide clear filters button
+        const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+        if (searchValue || statusFilter !== 'all' || roleFilter !== 'all') {
+            clearFiltersBtn.style.display = '';
+        } else {
+            clearFiltersBtn.style.display = 'none';
+        }
+    }
+
+    // Clear all filters
+    function clearFilters() {
+        document.getElementById('userSearchInput').value = '';
+        document.getElementById('userStatusFilter').value = 'all';
+        document.getElementById('userRoleFilter').value = 'all';
+        filterUsers();
+    }
+
+    // Add event listeners to all filter inputs
+    document.getElementById('userSearchInput').addEventListener('keyup', filterUsers);
+    document.getElementById('userStatusFilter').addEventListener('change', filterUsers);
+    document.getElementById('userRoleFilter').addEventListener('change', filterUsers);
+    document.getElementById('clearFiltersBtn').addEventListener('click', clearFilters);
+
+    // Initialize filters
+    document.getElementById('clearFiltersBtn').style.display = 'none';
+    filterUsers();
+</script>
+{% endblock %}

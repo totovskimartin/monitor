@@ -1,0 +1,589 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/uptime-charts.css') }}">
+<style>
+    .domain-name-link {
+        color: var(--text-color);
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+
+    .domain-name-link:hover {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    /* Make sure domain rows are not clickable */
+    .domain-row {
+        cursor: default;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">Dashboard</h1>
+            <p class="dashboard-subtitle">Monitor your domains and certificates</p>
+        </div>
+        <div class="dashboard-actions">
+            <div class="btn-group">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                    <i class="bi bi-plus-lg"></i> Add Domain
+                </button>
+                <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle Dropdown</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#addBulkDomainsModal">Add Bulk Domains</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Main Content - Domains Table (Full Width) -->
+    <div class="dashboard-main-content">
+        <!-- Domains Table Card -->
+        <div class="modern-card domains-card">
+            <div class="modern-card-header">
+                <h2 class="modern-card-title">
+                    <i class="bi bi-globe2"></i>
+                    Monitored Domains
+                    <span class="badge bg-primary rounded-pill ms-2">{{ domains|length }}</span>
+                </h2>
+                <div class="header-actions">
+                    <div class="search-box">
+                        <input type="text" class="form-control" id="domainSearch" placeholder="Search domains...">
+                    </div>
+                    <button id="refreshPingStatus" class="btn btn-outline-primary ms-3" title="Refresh ping status">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="modern-card-body">
+                <table class="modern-table" id="domainsTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 25%">Domain</th>
+                            <th style="width: 15%">SSL Status</th>
+                            <th style="width: 15%">Domain Expiry</th>
+                            <th style="width: 25%">Uptime</th>
+                            <th style="width: 20%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for domain in domains %}
+                        <tr class="domain-row" data-domain-id="{{ domain.id }}">
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="ping-indicator ping-{{ domain.health_status }} me-2" title="Ping status: {{ domain.health_status }}" data-host="{{ domain.name }}"></span>
+                                    <a href="{{ url_for('domain_details', domain_id=domain.id) }}" class="domain-name-link">{{ domain.name }}</a>
+                                    <a href="https://{{ domain.name }}" target="_blank" class="btn btn-link btn-sm ms-2" title="Open website">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </a>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    {% if domain.ssl_status %}
+                                        {% if domain.ssl_status.status == 'valid' %}
+                                            Valid ({{ domain.ssl_status.days_remaining }} days)
+                                            <i class="bi bi-check-circle-fill text-success ms-2"></i>
+                                        {% elif domain.ssl_status.status == 'warning' %}
+                                            Warning ({{ domain.ssl_status.days_remaining }} days)
+                                            <i class="bi bi-exclamation-triangle-fill text-warning ms-2"></i>
+                                        {% elif domain.ssl_status.status == 'expired' %}
+                                            Expired
+                                            <i class="bi bi-x-circle-fill text-danger ms-2"></i>
+                                        {% elif domain.ssl_status.status == 'error' %}
+                                            Error
+                                            <i class="bi bi-x-circle-fill text-danger ms-2"></i>
+                                        {% else %}
+                                            Unknown
+                                            <i class="bi bi-question-circle-fill text-muted ms-2"></i>
+                                        {% endif %}
+                                    {% else %}
+                                        Not monitored
+                                        <i class="bi bi-dash-circle-fill text-muted ms-2"></i>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    {% if domain.domain_status %}
+                                        {% if domain.expiry_status == 'valid' %}
+                                            Valid ({{ domain.days_until_expiry }} days)
+                                            <i class="bi bi-check-circle-fill text-success ms-2"></i>
+                                        {% elif domain.expiry_status == 'warning' %}
+                                            Warning ({{ domain.days_until_expiry }} days)
+                                            <i class="bi bi-exclamation-triangle-fill text-warning ms-2"></i>
+                                        {% elif domain.expiry_status == 'expired' %}
+                                            Expired
+                                            <i class="bi bi-x-circle-fill text-danger ms-2"></i>
+                                        {% elif domain.expiry_status == 'error' %}
+                                            Error
+                                            <i class="bi bi-x-circle-fill text-danger ms-2"></i>
+                                        {% else %}
+                                            Unknown
+                                            <i class="bi bi-question-circle-fill text-muted ms-2"></i>
+                                        {% endif %}
+                                    {% else %}
+                                        Not monitored
+                                        <i class="bi bi-dash-circle-fill text-muted ms-2"></i>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="uptime-container">
+                                    <div class="uptime-chart" title="Last 12 hours uptime">
+                                        {% if domain.uptime_segments %}
+                                            {% for status in domain.uptime_segments %}
+                                                <div class="uptime-segment uptime-{{ status }}"></div>
+                                            {% endfor %}
+                                            {% if domain.uptime_percentage is not none %}
+                                                <div class="uptime-percentage
+                                                    {% if domain.uptime_percentage >= 99 %}uptime-high
+                                                    {% elif domain.uptime_percentage >= 90 %}uptime-medium
+                                                    {% else %}uptime-low{% endif %}">
+                                                    {{ domain.uptime_percentage }}%
+                                                </div>
+                                            {% else %}
+                                                <div class="uptime-percentage">N/A</div>
+                                            {% endif %}
+                                        {% else %}
+                                            {% for i in range(12) %}
+                                                <div class="uptime-segment uptime-unknown"></div>
+                                            {% endfor %}
+                                            <div class="uptime-percentage">N/A</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="{{ url_for('domain_details', domain_id=domain.id) }}"
+                                       class="action-btn"
+                                       data-action="view"
+                                       data-domain-id="{{ domain.id }}"
+                                       data-bs-toggle="tooltip"
+                                       title="View Statistics">
+                                        <i class="bi bi-graph-up"></i>
+                                    </a>
+                                    <button class="action-btn"
+                                            data-action="edit"
+                                            data-domain-id="{{ domain.id }}"
+                                            data-bs-toggle="tooltip"
+                                            title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="action-btn"
+                                            data-action="delete"
+                                            data-domain-id="{{ domain.id }}"
+                                            data-bs-toggle="tooltip"
+                                            title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                    <button class="action-btn"
+                                            data-action="refresh"
+                                            data-domain-id="{{ domain.id }}"
+                                            data-bs-toggle="tooltip"
+                                            title="Refresh">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Domain Modal -->
+<div class="modal fade" id="addDomainModal" tabindex="-1" aria-labelledby="addDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addDomainModalLabel">Add Domain to Monitoring</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addDomainForm" method="post" action="{{ url_for('add_domain_from_dashboard') }}">
+                    <div class="mb-3">
+                        <label for="domain" class="form-label">Domain Name</label>
+                        <input type="text" class="form-control" id="domain" name="domain" placeholder="example.com" required>
+                        <div class="form-text">Enter the domain name without http:// or https://</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Monitoring Options</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="monitorSSL" name="monitor_ssl" checked>
+                            <label class="form-check-label" for="monitorSSL">
+                                SSL Certificate
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="monitorExpiry" name="monitor_expiry" checked>
+                            <label class="form-check-label" for="monitorExpiry">
+                                Domain Expiry
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="monitorPing" name="monitor_ping" checked>
+                            <label class="form-check-label" for="monitorPing">
+                                Ping Monitoring
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="addDomainSubmit">Add Domain</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteConfirmModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Confirm Deletion
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteDomainName"></strong> from all monitoring?</p>
+                <p class="text-muted mb-0">This action cannot be undone. All monitoring data for this domain will be permanently removed.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                    <i class="bi bi-trash me-1"></i>
+                    Delete Domain
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Bulk Domains Modal -->
+<div class="modal fade" id="addBulkDomainsModal" tabindex="-1" aria-labelledby="addBulkDomainsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addBulkDomainsModalLabel">Add Multiple Domains to Monitoring</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="bulkDomainsForm" method="post" action="{{ url_for('bulk_add_domains_from_dashboard') }}">
+                    <div class="mb-3">
+                        <label for="bulkDomains" class="form-label">Domain List</label>
+                        <textarea class="form-control" id="bulkDomains" name="domains" rows="6" placeholder="Enter multiple domains (one per line, or comma-separated)" required></textarea>
+                        <div class="form-text">Separate by newlines, commas, or spaces</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Monitoring Options</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="bulkMonitorSSL" name="monitor_ssl" checked>
+                            <label class="form-check-label" for="bulkMonitorSSL">
+                                SSL Certificate
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="bulkMonitorExpiry" name="monitor_expiry" checked>
+                            <label class="form-check-label" for="bulkMonitorExpiry">
+                                Domain Expiry
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="bulkMonitorPing" name="monitor_ping" checked>
+                            <label class="form-check-label" for="bulkMonitorPing">
+                                Ping Monitoring
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="bulkDomainsSubmit">Add Domains</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Domain Modal -->
+<div class="modal fade" id="editDomainModal" tabindex="-1" aria-labelledby="editDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDomainModalLabel">Edit Domain Monitoring</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editDomainForm" method="post" action="{{ url_for('edit_domain_from_dashboard') }}">
+                    <input type="hidden" id="editDomainId" name="domain_id">
+                    <div class="mb-3">
+                        <label for="editDomainName" class="form-label">Domain Name</label>
+                        <input type="text" class="form-control" id="editDomainName" name="domain" placeholder="example.com" required>
+                        <div class="form-text">Enter the domain name without http:// or https://</div>
+                    </div>
+                    <input type="hidden" id="originalDomainName" name="original_domain">
+                    <div class="mb-3">
+                        <label class="form-label">Monitoring Options</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editMonitorSSL" name="monitor_ssl">
+                            <label class="form-check-label" for="editMonitorSSL">
+                                SSL Certificate
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editMonitorExpiry" name="monitor_expiry">
+                            <label class="form-check-label" for="editMonitorExpiry">
+                                Domain Expiry
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editMonitorPing" name="monitor_ping">
+                            <label class="form-check-label" for="editMonitorPing">
+                                Ping Monitoring
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="editDomainSubmit">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Empty State Message (shown when no domains are being monitored) -->
+{% if not domains %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const tbody = document.querySelector('.modern-table tbody');
+        if (tbody && tbody.children.length === 0) {
+            const emptyRow = document.createElement('tr');
+            emptyRow.innerHTML = '<td colspan="4" class="text-center py-4">No domains are being monitored. Add a domain to get started.</td>';
+            tbody.appendChild(emptyRow);
+        }
+    });
+</script>
+{% endif %}
+
+
+
+<!-- Domain Modal Scripts -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Delete Confirmation Modal
+        const deleteConfirmModal = document.getElementById('deleteConfirmModal');
+
+        // Fix for modal backdrop issue
+        if (deleteConfirmModal) {
+            deleteConfirmModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        // Add Domain Modal
+        const addDomainModal = document.getElementById('addDomainModal');
+        const addDomainSubmit = document.getElementById('addDomainSubmit');
+        const addDomainForm = document.getElementById('addDomainForm');
+
+        // Add Bulk Domains Modal
+        const addBulkDomainsModal = document.getElementById('addBulkDomainsModal');
+        const bulkDomainsSubmit = document.getElementById('bulkDomainsSubmit');
+        const bulkDomainsForm = document.getElementById('bulkDomainsForm');
+
+        // Fix for modal backdrop issue
+        if (addDomainModal) {
+            addDomainModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (addDomainSubmit && addDomainForm) {
+            addDomainSubmit.addEventListener('click', function() {
+                // Check if at least one monitoring option is selected
+                const monitorSSL = document.getElementById('monitorSSL').checked;
+                const monitorExpiry = document.getElementById('monitorExpiry').checked;
+                const monitorPing = document.getElementById('monitorPing').checked;
+
+                if (!monitorSSL && !monitorExpiry && !monitorPing) {
+                    alert('Please select at least one monitoring option.');
+                    return;
+                }
+
+                // Submit the form
+                addDomainForm.submit();
+            });
+        }
+
+        // Fix for modal backdrop issue
+        if (addBulkDomainsModal) {
+            addBulkDomainsModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (bulkDomainsSubmit && bulkDomainsForm) {
+            bulkDomainsSubmit.addEventListener('click', function() {
+                // Check if at least one monitoring option is selected
+                const monitorSSL = document.getElementById('bulkMonitorSSL').checked;
+                const monitorExpiry = document.getElementById('bulkMonitorExpiry').checked;
+                const monitorPing = document.getElementById('bulkMonitorPing').checked;
+
+                if (!monitorSSL && !monitorExpiry && !monitorPing) {
+                    alert('Please select at least one monitoring option.');
+                    return;
+                }
+
+                // Submit the form
+                bulkDomainsForm.submit();
+            });
+        }
+
+        // Edit Domain Modal
+        const editDomainModal = document.getElementById('editDomainModal');
+        const editDomainSubmit = document.getElementById('editDomainSubmit');
+        const editDomainForm = document.getElementById('editDomainForm');
+
+        // Fix for modal backdrop issue
+        if (editDomainModal) {
+            editDomainModal.addEventListener('hidden.bs.modal', function() {
+                // Ensure backdrop is removed
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+                // Ensure body classes are cleaned up
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            });
+        }
+
+        if (editDomainSubmit && editDomainForm) {
+            editDomainSubmit.addEventListener('click', function() {
+                // Check if at least one monitoring option is selected
+                const monitorSSL = document.getElementById('editMonitorSSL').checked;
+                const monitorExpiry = document.getElementById('editMonitorExpiry').checked;
+                const monitorPing = document.getElementById('editMonitorPing').checked;
+
+                if (!monitorSSL && !monitorExpiry && !monitorPing) {
+                    alert('Please select at least one monitoring option.');
+                    return;
+                }
+
+                // Submit the form
+                editDomainForm.submit();
+            });
+        }
+    });
+</script>
+
+<!-- Dashboard Scripts -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle ping indicators
+        function updatePingStatus() {
+            document.querySelectorAll('.ping-indicator').forEach(indicator => {
+                const host = indicator.getAttribute('data-host');
+
+                // Make an AJAX call to check the actual ping status
+                fetch(`/check_ping/${host}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const status = data.ping_status;
+
+                        // Remove all classes and add the new one
+                        indicator.classList.remove('ping-up', 'ping-down', 'ping-unknown');
+                        indicator.classList.add(`ping-${status}`);
+
+                        // Update the title
+                        indicator.setAttribute('title', `Ping status: ${status}`);
+
+                        // Find the parent row
+                        const row = indicator.closest('tr');
+                        if (row) {
+                            // Reload the page to update uptime statistics
+                            // This is a simple approach - in a production app, you might
+                            // want to update just the uptime chart via AJAX
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking ping status:', error);
+                    });
+            });
+        }
+
+        // Set up a button to manually refresh ping status
+        const refreshButton = document.getElementById('refreshPingStatus');
+        if (refreshButton) {
+            refreshButton.addEventListener('click', function() {
+                updatePingStatus();
+            });
+        }
+
+        // Update every 5 minutes (300000 ms)
+        // We use a longer interval since we're making actual API calls
+        setInterval(updatePingStatus, 300000);
+    });
+</script>
+{% endblock %}
