@@ -8982,7 +8982,16 @@ def save_cropped_image():
         db.update_user_profile_image(current_user['id'], filename)
 
         # Delete the temporary file
-        temp_path = os.path.join(current_dir, 'static', 'temp', temp_filename)
+        # Sanitize and validate the temp_filename
+        from werkzeug.utils import secure_filename
+        safe_filename = secure_filename(temp_filename)
+        temp_path = os.path.normpath(os.path.join(current_dir, 'static', 'temp', safe_filename))
+
+        # Ensure the temp_path is within the intended directory
+        temp_dir = os.path.normpath(os.path.join(current_dir, 'static', 'temp'))
+        if not temp_path.startswith(temp_dir):
+            raise ValueError("Invalid file path")
+
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
