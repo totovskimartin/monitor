@@ -123,6 +123,17 @@ def cache_ping_data(domain, ping_result):
 
 def check_ping(domain):
     """Check if a domain is reachable via ping and return status and response time with caching"""
+    # Validate the domain
+    try:
+        domain = validate_domain(domain)
+    except ValueError as e:
+        logger.error(str(e))
+        return {
+            "status": "invalid",
+            "response_time": 0.0,
+            "last_checked": datetime.now()
+        }
+
     # Default response for errors
     default_down_response = {
         "status": "down",
@@ -1942,7 +1953,15 @@ def check_certificate(domain: str) -> CertificateStatus:
 
         return error_status
 
-def clean_domain_name(domain):
+def validate_domain(domain):
+    """Validate that the domain is a valid domain name or IP address."""
+    domain_regex = re.compile(
+        r"^(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}$"  # Domain name
+        r"|^(?:\d{1,3}\.){3}\d{1,3}$"  # IPv4 address
+    )
+    if not domain_regex.match(domain):
+        raise ValueError(f"Invalid domain: {domain}")
+    return domain
     """Clean a domain name by removing protocol, trailing slashes, and paths"""
     if not domain:
         return ""
@@ -4010,6 +4029,14 @@ def remove_ssl_domain(domain):
 @app.route('/refresh_ssl_certificate/<domain>')
 def refresh_ssl_certificate(domain):
     """Refresh SSL certificate data for a specific domain"""
+    try:
+        domain = validate_domain(domain)
+    except ValueError as e:
+        logger.error(str(e))
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
     try:
         cert_status = check_certificate(domain)
         return jsonify({
