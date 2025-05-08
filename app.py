@@ -5521,9 +5521,12 @@ def clear_ssl_cache(domain):
     referrer = request.referrer
     if referrer:
         from urllib.parse import urlparse
+        referrer = referrer.replace('\\', '/')
         parsed_url = urlparse(referrer)
+        # Define a list of trusted domains
+        trusted_domains = ['yourtrustedomain.com']
         # Allow only relative URLs or URLs from trusted domains
-        if not parsed_url.netloc or parsed_url.netloc.endswith('yourtrustedomain.com'):
+        if not parsed_url.netloc or parsed_url.netloc in trusted_domains:
             return redirect(referrer)
     return redirect(url_for('ssl_certificates'))
 
