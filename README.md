@@ -35,6 +35,10 @@ A modern web application for monitoring SSL certificates, domain expiration, and
 
 3. Access the application at http://localhost:5000
 
+4. Log in with the default admin account:
+   - Username: `admin`
+   - Password: `admin`
+
 ## Development
 
 1. Create a virtual environment:
