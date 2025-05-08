@@ -1725,8 +1725,10 @@ def check_certificate(domain: str) -> CertificateStatus:
 
         # Create a context with default verification options
         context = ssl.create_default_context()
+        # Set minimum TLS version to TLSv1.2 for security
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
 
-        logger.info(f"Created SSL context for {domain}")
+        logger.info(f"Created SSL context for {domain} with minimum TLS version set to TLSv1.2")
 
         # Connect to the server with a shorter timeout (2 seconds instead of 5)
         logger.info(f"Attempting to connect to {domain}:443 with 2 second timeout")
@@ -10223,13 +10225,26 @@ if __name__ == '__main__':
     start_background_tasks()
 
     # Start the application
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('HOST', '0.0.0.0')
+
     if os.getenv('FLASK_ENV') == 'production':
-        # Production settings
+        # Production settings - never use debug mode
         try:
             from waitress import serve
-            serve(app, host='0.0.0.0', port=5000)
+            logger.info(f"Starting production server with Waitress on {host}:{port}")
+            serve(app, host=host, port=port)
         except ImportError:
-            app.run(debug=False, host='0.0.0.0', port=5000)
+            logger.info(f"Waitress not installed, using Flask production server on {host}:{port}")
+            app.run(debug=False, host=host, port=port)
     else:
-        # Development settings
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        # Development settings - only use debug mode in a controlled local environment
+        # Debug mode should NEVER be enabled on a publicly accessible server
+        debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+
+        if debug_mode:
+            logger.warning("Running with debug=True. This should NEVER be used in production environments!")
+            app.run(debug=True, host=host, port=port)
+        else:
+            logger.info(f"Starting development server without debug mode on {host}:{port}")
+            app.run(debug=False, host=host, port=port)
