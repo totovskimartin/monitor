@@ -2,58 +2,17 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/alerts.css') }}">
-<style>
-    /* Bulk operations styles */
-    .timeline-checkbox {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-right: 10px;
-    }
-
-    .timeline-item {
-        display: flex;
-        align-items: flex-start;
-    }
-
-    .bulk-actions {
-        display: flex;
-        align-items: center;
-    }
-
-    @media (max-width: 768px) {
-        .bulk-actions {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 5px;
-        }
-
-        .bulk-actions .btn {
-            margin-left: 0 !important;
-            margin-top: 5px;
-        }
-    }
-</style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-2">
-    <div class="row mb-3">
-        <div class="col-12">
-            <h1 class="h3 fw-bold mb-1">Alerts</h1>
-            <p class="text-muted small mb-0">View all system alerts and notifications</p>
-        </div>
-    </div>
-
-
-
+<div class="container-fluid py-4">
     <!-- Alerts Card -->
     <div class="modern-card">
         <div class="modern-card-header">
             <div class="d-flex align-items-center">
                 <h2 class="modern-card-title mb-0">
                     <i class="bi bi-bell"></i>
-                    System Alerts
+                    Active Alerts
                 </h2>
                 <div class="dropdown ms-3">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="alertFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -67,463 +26,450 @@
                         <li><a class="dropdown-item" href="#" data-filter="ssl">SSL Certificate</a></li>
                         <li><a class="dropdown-item" href="#" data-filter="domain">Domain Expiry</a></li>
                         <li><a class="dropdown-item" href="#" data-filter="ping">Ping Status</a></li>
-                        <li><a class="dropdown-item" href="#" data-filter="error">Errors</a></li>
                     </ul>
                 </div>
             </div>
             <div class="header-actions">
-                <!-- Acknowledge All button will be added here by JavaScript -->
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="refresh-alerts-btn">
+                    <i class="bi bi-arrow-repeat"></i> Refresh
+                </button>
+                <a href="{{ url_for('archived_alerts') }}" class="btn btn-sm btn-outline-secondary ms-2">
+                    <i class="bi bi-archive"></i> Archive
+                </a>
+                <button id="acknowledgeAllBtn" class="btn btn-sm btn-outline-success ms-2" {% if not alerts or all_acknowledged %}disabled{% endif %}>
+                    <i class="bi bi-check-all"></i> Acknowledge All
+                </button>
             </div>
         </div>
         <div class="modern-card-body">
-            <div class="alert-timeline">
-                {% if alerts %}
-                    <!-- Unacknowledged Alerts Section -->
-                    {% set has_unacknowledged = false %}
-                    <div class="alert-section mb-3" id="unacknowledged-alerts-section">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h3 class="alert-section-title mb-0">
-                                <i class="bi bi-bell-fill text-danger me-2"></i>
-                                Unacknowledged Alerts
-                                <span class="badge bg-danger ms-2" id="unacknowledged-count">0</span>
-                            </h3>
-                            <div class="bulk-actions">
-                                <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllUnacknowledgedBtn">
-                                    <i class="bi bi-check-square me-1"></i> Select All
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-primary ms-2" id="bulkAcknowledgeBtn" style="display: none;">
-                                    <i class="bi bi-check-all me-1"></i> Acknowledge Selected
-                                </button>
-                            </div>
-                        </div>
+            {% if alerts %}
+                <!-- Alert Summary -->
+                <div class="alert-summary mb-4">
+                    <div class="alert-summary-item">
+                        <div class="alert-count">{{ alerts|selectattr('acknowledged', 'equalto', false)|list|length }}</div>
+                        <div class="alert-label">Unacknowledged</div>
+                    </div>
+                    <div class="alert-summary-item">
+                        <div class="alert-count">{{ alerts|selectattr('acknowledged', 'equalto', true)|list|length }}</div>
+                        <div class="alert-label">Acknowledged</div>
+                    </div>
+                    <div class="alert-summary-item">
+                        <div class="alert-count">{{ alerts|selectattr('type', 'equalto', 'SSL')|list|length }}</div>
+                        <div class="alert-label">SSL</div>
+                    </div>
+                    <div class="alert-summary-item">
+                        <div class="alert-count">{{ alerts|selectattr('type', 'equalto', 'Domain')|list|length }}</div>
+                        <div class="alert-label">Domain</div>
+                    </div>
+                    <div class="alert-summary-item">
+                        <div class="alert-count">{{ alerts|selectattr('type', 'equalto', 'Ping')|list|length }}</div>
+                        <div class="alert-label">Ping</div>
+                    </div>
+                </div>
 
-                        {% for alert in alerts %}
-                            {% if not alert.acknowledged %}
-                                {% set has_unacknowledged = true %}
-                                <div class="timeline-item" data-alert-type="{{ alert.type|lower }}">
-                                    <div class="timeline-checkbox">
-                                        <div class="form-check">
-                                            <input class="form-check-input alert-checkbox" type="checkbox" value="{{ alert.id }}" data-alert-id="{{ alert.id }}">
-                                        </div>
+                <!-- Unacknowledged Alerts Section -->
+                {% set unacknowledged_alerts = alerts|selectattr('acknowledged', 'equalto', false)|list %}
+                {% if unacknowledged_alerts %}
+                <div class="alert-section" id="unacknowledgedSection">
+                    <div class="alert-section-title">
+                        <i class="bi bi-exclamation-circle"></i> Unacknowledged Alerts ({{ unacknowledged_alerts|length }})
+                    </div>
+                    <div class="alert-list">
+                        {% for alert in unacknowledged_alerts %}
+                        <div class="alert-item" data-alert-id="{{ alert.id }}" data-alert-type="{{ alert.type|lower }}" data-alert-status="{{ alert.status|default('warning') }}" data-acknowledged="false">
+                            <div class="alert-icon alert-icon-{{ alert.type|lower }}">
+                                {% if alert.type == 'SSL' %}
+                                <i class="bi bi-shield-lock"></i>
+                                {% elif alert.type == 'Domain' %}
+                                <i class="bi bi-globe"></i>
+                                {% elif alert.type == 'Ping' %}
+                                <i class="bi bi-wifi"></i>
+                                {% else %}
+                                <i class="bi bi-exclamation-triangle"></i>
+                                {% endif %}
+                            </div>
+                            <div class="alert-content">
+                                <div class="alert-header">
+                                    <div class="alert-domain">
+                                        <a href="{{ url_for('domain_details', domain_id=alert.domain_id|default(0)) }}">{{ alert.domain }}</a>
                                     </div>
-                                    <div class="timeline-icon {{ alert.type|lower }}">
-                                        <i class="bi bi-{{ alert.icon }}"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <div class="timeline-header">
-                                            <p class="timeline-text mb-0">{{ alert.message }}</p>
-                                        </div>
-                                        <div class="timeline-meta">
-                                            <span class="timeline-time">{{ alert.time }}</span>
-                                            <span class="timeline-domain">{{ alert.domain }}</span>
-                                        </div>
-                                    </div>
-                                    <div class="timeline-actions">
-                                        <form action="{{ url_for('acknowledge_alert', alert_id=alert.id) }}" method="POST" class="d-inline">
-                                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Acknowledge">
-                                                <i class="bi bi-check-circle"></i> Acknowledge
-                                            </button>
-                                        </form>
+                                    <div class="alert-meta">
+                                        <span class="alert-time">{{ alert.time }}</span>
+                                        <span class="alert-type-badge badge bg-{{ alert.type|lower }}">{{ alert.type }}</span>
+                                        {% if alert.status %}
+                                        <span class="alert-status-badge badge bg-{{ alert.status }}">{{ alert.status|capitalize }}</span>
+                                        {% endif %}
                                     </div>
                                 </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-
-                    <!-- Acknowledged Alerts Section -->
-                    {% set has_acknowledged = false %}
-                    <div class="alert-section" id="acknowledged-alerts-section">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h3 class="alert-section-title mb-0">
-                                <i class="bi bi-bell-check text-secondary me-2"></i>
-                                Acknowledged Alerts
-                                <span class="badge bg-secondary ms-2" id="acknowledged-count">0</span>
-                            </h3>
-                            <div class="bulk-actions">
-                                <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllAcknowledgedBtn">
-                                    <i class="bi bi-check-square me-1"></i> Select All
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="bulkUnacknowledgeBtn" style="display: none;">
-                                    <i class="bi bi-x-circle me-1"></i> Unacknowledge Selected
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-danger ms-2" id="bulkDeleteBtn" style="display: none;">
-                                    <i class="bi bi-trash me-1"></i> Delete Selected
-                                </button>
-                                <form action="{{ url_for('delete_all_acknowledged_alerts') }}" method="POST" class="d-inline ms-2" id="delete-all-form">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" id="delete-all-btn">
-                                        <i class="bi bi-trash me-1"></i> Delete All
-                                    </button>
-                                </form>
+                                <div class="alert-message">{{ alert.message }}</div>
+                                <div class="alert-actions">
+                                    <form action="{{ url_for('acknowledge_alert', alert_id=alert.id) }}" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-success acknowledge-btn" data-alert-id="{{ alert.id }}">
+                                            <i class="bi bi-check-circle"></i> Acknowledge
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
-
-                        {% for alert in alerts %}
-                            {% if alert.acknowledged %}
-                                {% set has_acknowledged = true %}
-                                <div class="timeline-item acknowledged" data-alert-type="{{ alert.type|lower }}">
-                                    <div class="timeline-checkbox">
-                                        <div class="form-check">
-                                            <input class="form-check-input acknowledged-alert-checkbox" type="checkbox" value="{{ alert.id }}" data-alert-id="{{ alert.id }}">
-                                        </div>
-                                    </div>
-                                    <div class="timeline-icon {{ alert.type|lower }}">
-                                        <i class="bi bi-{{ alert.icon }}"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <div class="timeline-header">
-                                            <p class="timeline-text mb-0">{{ alert.message }}</p>
-                                        </div>
-                                        <div class="timeline-meta">
-                                            <span class="timeline-time">{{ alert.time }}</span>
-                                            <span class="timeline-domain">{{ alert.domain }}</span>
-                                            <span class="badge bg-secondary">Acknowledged</span>
-                                        </div>
-                                    </div>
-                                    <div class="timeline-actions">
-                                        <div class="btn-group">
-                                            <form action="{{ url_for('unacknowledge_alert', alert_id=alert.id) }}" method="POST" class="d-inline">
-                                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Remove acknowledgment">
-                                                    <i class="bi bi-x-circle"></i> Unacknowledge
-                                                </button>
-                                            </form>
-                                            <form action="{{ url_for('delete_alert', alert_id=alert.id) }}" method="POST" class="d-inline ms-2">
-                                                <button type="button" class="btn btn-sm btn-outline-danger delete-alert-btn" title="Delete alert" data-alert-id="{{ alert.id }}">
-                                                    <i class="bi bi-trash"></i> Delete
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-                            {% endif %}
                         {% endfor %}
                     </div>
-
-                    <script>
-                        // Update the counts and hide empty sections
-                        document.addEventListener('DOMContentLoaded', function() {
-                            const unacknowledgedItems = document.querySelectorAll('#unacknowledged-alerts-section .timeline-item').length;
-                            const acknowledgedItems = document.querySelectorAll('#acknowledged-alerts-section .timeline-item').length;
-
-                            document.getElementById('unacknowledged-count').textContent = unacknowledgedItems;
-                            document.getElementById('acknowledged-count').textContent = acknowledgedItems;
-
-                            if (unacknowledgedItems === 0) {
-                                document.getElementById('unacknowledged-alerts-section').style.display = 'none';
-                            }
-
-                            if (acknowledgedItems === 0) {
-                                document.getElementById('acknowledged-alerts-section').style.display = 'none';
-                            }
-
-                            // Handle individual alert deletion
-                            const deleteButtons = document.querySelectorAll('.delete-alert-btn');
-                            deleteButtons.forEach(button => {
-                                button.addEventListener('click', function() {
-                                    const alertId = this.getAttribute('data-alert-id');
-                                    if (confirm('Are you sure you want to delete this alert? This action cannot be undone.')) {
-                                        this.closest('form').submit();
-                                    }
-                                });
-                            });
-
-                            // Handle delete all acknowledged alerts
-                            const deleteAllBtn = document.getElementById('delete-all-btn');
-                            if (deleteAllBtn) {
-                                deleteAllBtn.addEventListener('click', function() {
-                                    if (acknowledgedItems === 0) {
-                                        alert('There are no acknowledged alerts to delete.');
-                                        return;
-                                    }
-
-                                    if (confirm(`Are you sure you want to delete all ${acknowledgedItems} acknowledged alerts? This action cannot be undone.`)) {
-                                        document.getElementById('delete-all-form').submit();
-                                    }
-                                });
-                            }
-
-                            // Restore deleted alerts functionality removed
-                        });
-                    </script>
-                {% else %}
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        No alerts to display. All systems are operating normally.
-                    </div>
+                </div>
                 {% endif %}
-            </div>
+
+                <!-- Acknowledged Alerts Section -->
+                {% set acknowledged_alerts = alerts|selectattr('acknowledged', 'equalto', true)|list %}
+                {% if acknowledged_alerts %}
+                <div class="alert-section" id="acknowledgedSection">
+                    <div class="alert-section-title">
+                        <i class="bi bi-check-circle"></i> Acknowledged Alerts ({{ acknowledged_alerts|length }})
+                    </div>
+                    <div class="alert-list">
+                        {% for alert in acknowledged_alerts %}
+                        <div class="alert-item acknowledged" data-alert-id="{{ alert.id }}" data-alert-type="{{ alert.type|lower }}" data-alert-status="{{ alert.status|default('warning') }}" data-acknowledged="true">
+                            <div class="alert-icon alert-icon-{{ alert.type|lower }}">
+                                {% if alert.type == 'SSL' %}
+                                <i class="bi bi-shield-lock"></i>
+                                {% elif alert.type == 'Domain' %}
+                                <i class="bi bi-globe"></i>
+                                {% elif alert.type == 'Ping' %}
+                                <i class="bi bi-wifi"></i>
+                                {% else %}
+                                <i class="bi bi-exclamation-triangle"></i>
+                                {% endif %}
+                            </div>
+                            <div class="alert-content">
+                                <div class="alert-header">
+                                    <div class="alert-domain">
+                                        <a href="{{ url_for('domain_details', domain_id=alert.domain_id|default(0)) }}">{{ alert.domain }}</a>
+                                    </div>
+                                    <div class="alert-meta">
+                                        <span class="alert-time">{{ alert.time }}</span>
+                                        <span class="alert-type-badge badge bg-{{ alert.type|lower }}">{{ alert.type }}</span>
+                                        {% if alert.status %}
+                                        <span class="alert-status-badge badge bg-{{ alert.status }}">{{ alert.status|capitalize }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="alert-message">{{ alert.message }}</div>
+                                <div class="alert-actions">
+                                    <form action="{{ url_for('unacknowledge_alert', alert_id=alert.id) }}" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning unacknowledge-btn" data-alert-id="{{ alert.id }}">
+                                            <i class="bi bi-arrow-counterclockwise"></i> Unacknowledge
+                                        </button>
+                                    </form>
+                                    <form action="{{ url_for('delete_alert', alert_id=alert.id) }}" method="POST" class="d-inline ms-2">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger delete-btn" data-alert-id="{{ alert.id }}">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="alert-empty-state">
+                    <div class="empty-state-icon">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                    <h3 class="empty-state-title">No Active Alerts</h3>
+                    <p class="empty-state-message">All your domains and certificates are currently in good health.</p>
+                </div>
+            {% endif %}
         </div>
     </div>
 </div>
 
+<!-- Acknowledge All Modal -->
+<div class="modal fade" id="acknowledgeAllModal" tabindex="-1" aria-labelledby="acknowledgeAllModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="acknowledgeAllModalLabel">Acknowledge All Alerts</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to acknowledge all unacknowledged alerts?</p>
+                <p>This will mark all alerts as acknowledged and move them to the acknowledged section.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{{ url_for('acknowledge_all_alerts') }}" method="POST">
+                    {% for alert in alerts|selectattr('acknowledged', 'equalto', false)|list %}
+                    <input type="hidden" name="alert_ids" value="{{ alert.id }}">
+                    {% endfor %}
+                    <button type="submit" class="btn btn-success">Acknowledge All</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Alert filtering functionality
-        const filterLinks = document.querySelectorAll('[data-filter]');
-        const alertItems = document.querySelectorAll('.timeline-item');
-        const alertSections = document.querySelectorAll('.alert-section');
+        // Initialize filter functionality
+        const filterLinks = document.querySelectorAll('#alertFilterDropdown .dropdown-item');
+        const alertItems = document.querySelectorAll('.alert-item');
 
-        // Bulk operations elements
-        const selectAllUnacknowledgedBtn = document.getElementById('selectAllUnacknowledgedBtn');
-        const selectAllAcknowledgedBtn = document.getElementById('selectAllAcknowledgedBtn');
-        const bulkAcknowledgeBtn = document.getElementById('bulkAcknowledgeBtn');
-        const bulkUnacknowledgeBtn = document.getElementById('bulkUnacknowledgeBtn');
-        const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-        const alertCheckboxes = document.querySelectorAll('.alert-checkbox');
-        const acknowledgedAlertCheckboxes = document.querySelectorAll('.acknowledged-alert-checkbox');
-
-        // Function to update bulk action buttons visibility
-        function updateBulkActionButtons() {
-            // For unacknowledged alerts
-            const checkedUnacknowledged = document.querySelectorAll('.alert-checkbox:checked').length;
-            bulkAcknowledgeBtn.style.display = checkedUnacknowledged > 0 ? 'inline-block' : 'none';
-
-            // For acknowledged alerts
-            const checkedAcknowledged = document.querySelectorAll('.acknowledged-alert-checkbox:checked').length;
-            bulkUnacknowledgeBtn.style.display = checkedAcknowledged > 0 ? 'inline-block' : 'none';
-            bulkDeleteBtn.style.display = checkedAcknowledged > 0 ? 'inline-block' : 'none';
-        }
-
-        // Select all unacknowledged alerts
-        if (selectAllUnacknowledgedBtn) {
-            selectAllUnacknowledgedBtn.addEventListener('click', function() {
-                const isSelectAll = !this.classList.contains('active');
-                this.classList.toggle('active');
-                this.innerHTML = isSelectAll ?
-                    '<i class="bi bi-square me-1"></i> Deselect All' :
-                    '<i class="bi bi-check-square me-1"></i> Select All';
-
-                alertCheckboxes.forEach(checkbox => {
-                    checkbox.checked = isSelectAll;
-                });
-
-                updateBulkActionButtons();
+        // Acknowledge All button
+        const acknowledgeAllBtn = document.getElementById('acknowledgeAllBtn');
+        if (acknowledgeAllBtn) {
+            acknowledgeAllBtn.addEventListener('click', function() {
+                const modal = new bootstrap.Modal(document.getElementById('acknowledgeAllModal'));
+                modal.show();
             });
         }
 
-        // Select all acknowledged alerts
-        if (selectAllAcknowledgedBtn) {
-            selectAllAcknowledgedBtn.addEventListener('click', function() {
-                const isSelectAll = !this.classList.contains('active');
-                this.classList.toggle('active');
-                this.innerHTML = isSelectAll ?
-                    '<i class="bi bi-square me-1"></i> Deselect All' :
-                    '<i class="bi bi-check-square me-1"></i> Select All';
-
-                acknowledgedAlertCheckboxes.forEach(checkbox => {
-                    checkbox.checked = isSelectAll;
-                });
-
-                updateBulkActionButtons();
+        // Refresh button
+        const refreshBtn = document.getElementById('refresh-alerts-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function() {
+                window.location.reload();
             });
         }
 
-        // Individual checkbox change events
-        alertCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', updateBulkActionButtons);
-        });
-
-        acknowledgedAlertCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', updateBulkActionButtons);
-        });
-
-        // Bulk acknowledge button
-        if (bulkAcknowledgeBtn) {
-            bulkAcknowledgeBtn.addEventListener('click', function() {
-                const selectedAlerts = Array.from(document.querySelectorAll('.alert-checkbox:checked')).map(cb => cb.value);
-
-                if (selectedAlerts.length === 0) {
-                    alert('Please select at least one alert to acknowledge.');
-                    return;
-                }
-
-                if (confirm(`Are you sure you want to acknowledge ${selectedAlerts.length} selected alert(s)?`)) {
-                    // Create a form to submit all at once
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = '{{ url_for("bulk_acknowledge_alerts") }}';
-
-                    // Add all selected alert IDs as hidden inputs
-                    selectedAlerts.forEach(alertId => {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'alert_ids';
-                        input.value = alertId;
-                        form.appendChild(input);
-                    });
-
-                    document.body.appendChild(form);
-                    form.submit();
-                }
-            });
-        }
-
-        // Bulk unacknowledge button
-        if (bulkUnacknowledgeBtn) {
-            bulkUnacknowledgeBtn.addEventListener('click', function() {
-                const selectedAlerts = Array.from(document.querySelectorAll('.acknowledged-alert-checkbox:checked')).map(cb => cb.value);
-
-                if (selectedAlerts.length === 0) {
-                    alert('Please select at least one alert to unacknowledge.');
-                    return;
-                }
-
-                if (confirm(`Are you sure you want to unacknowledge ${selectedAlerts.length} selected alert(s)?`)) {
-                    // Create a form to submit all at once
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = '{{ url_for("bulk_unacknowledge_alerts") }}';
-
-                    // Add all selected alert IDs as hidden inputs
-                    selectedAlerts.forEach(alertId => {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'alert_ids';
-                        input.value = alertId;
-                        form.appendChild(input);
-                    });
-
-                    document.body.appendChild(form);
-                    form.submit();
-                }
-            });
-        }
-
-        // Bulk delete button
-        if (bulkDeleteBtn) {
-            bulkDeleteBtn.addEventListener('click', function() {
-                const selectedAlerts = Array.from(document.querySelectorAll('.acknowledged-alert-checkbox:checked')).map(cb => cb.value);
-
-                if (selectedAlerts.length === 0) {
-                    alert('Please select at least one alert to delete.');
-                    return;
-                }
-
-                if (confirm(`Are you sure you want to delete ${selectedAlerts.length} selected alert(s)? This action cannot be undone.`)) {
-                    // Create a form to submit all at once
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = '{{ url_for("bulk_delete_alerts") }}';
-
-                    // Add all selected alert IDs as hidden inputs
-                    selectedAlerts.forEach(alertId => {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'alert_ids';
-                        input.value = alertId;
-                        form.appendChild(input);
-                    });
-
-                    document.body.appendChild(form);
-                    form.submit();
-                }
-            });
-        }
-
-        // Alert filtering functionality
+        // Filter functionality
         filterLinks.forEach(link => {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
 
-                // Update active state
+                // Update active class
                 filterLinks.forEach(l => l.classList.remove('active'));
                 this.classList.add('active');
 
-                const filterValue = this.getAttribute('data-filter');
+                const filter = this.getAttribute('data-filter');
 
-                // Show/hide alerts based on filter
+                // Apply filter
                 alertItems.forEach(item => {
-                    const isAcknowledged = item.classList.contains('acknowledged');
-                    const alertType = item.getAttribute('data-alert-type');
-
-                    let shouldShow = false;
-
-                    if (filterValue === 'all') {
-                        shouldShow = true;
-                    } else if (filterValue === 'acknowledged') {
-                        shouldShow = isAcknowledged;
-                    } else if (filterValue === 'unacknowledged') {
-                        shouldShow = !isAcknowledged;
+                    if (filter === 'all') {
+                        item.style.display = '';
+                    } else if (filter === 'unacknowledged') {
+                        item.style.display = item.getAttribute('data-acknowledged') === 'false' ? '' : 'none';
+                    } else if (filter === 'acknowledged') {
+                        item.style.display = item.getAttribute('data-acknowledged') === 'true' ? '' : 'none';
                     } else {
-                        shouldShow = alertType === filterValue;
-                    }
-
-                    item.style.display = shouldShow ? '' : 'none';
-                });
-
-                // Show/hide sections based on visible alerts
-                alertSections.forEach(section => {
-                    const visibleAlertsInSection = section.querySelectorAll('.timeline-item:not([style*="display: none"])');
-                    if (visibleAlertsInSection.length > 0) {
-                        section.style.display = '';
-                        // Update the count badge
-                        const countBadge = section.querySelector('.badge');
-                        if (countBadge) {
-                            countBadge.textContent = visibleAlertsInSection.length;
-                        }
-                    } else {
-                        section.style.display = 'none';
+                        // Filter by alert type
+                        item.style.display = item.getAttribute('data-alert-type') === filter ? '' : 'none';
                     }
                 });
 
-                // Show message if no alerts match filter
-                const visibleAlerts = Array.from(alertItems).filter(item => item.style.display !== 'none');
-                let noAlertsMessage = document.querySelector('.alert-info');
-                const noFilterMatchMessage = document.querySelector('.no-filter-match');
-
-                if (visibleAlerts.length === 0) {
-                    if (noAlertsMessage) {
-                        noAlertsMessage.style.display = 'none';
-                    }
-
-                    if (!noFilterMatchMessage) {
-                        const message = document.createElement('div');
-                        message.className = 'alert alert-info mt-3 no-filter-match';
-                        message.innerHTML = '<i class="bi bi-info-circle me-2"></i> No alerts match the selected filter.';
-                        document.querySelector('.alert-timeline').appendChild(message);
-                    } else {
-                        noFilterMatchMessage.style.display = '';
-                    }
-                } else {
-                    if (noFilterMatchMessage) {
-                        noFilterMatchMessage.style.display = 'none';
-                    }
-                }
-
-                // Reset checkboxes when filtering
-                document.querySelectorAll('.form-check-input').forEach(checkbox => {
-                    checkbox.checked = false;
-                });
-
-                // Reset select all buttons
-                if (selectAllUnacknowledgedBtn) {
-                    selectAllUnacknowledgedBtn.classList.remove('active');
-                    selectAllUnacknowledgedBtn.innerHTML = '<i class="bi bi-check-square me-1"></i> Select All';
-                }
-
-                if (selectAllAcknowledgedBtn) {
-                    selectAllAcknowledgedBtn.classList.remove('active');
-                    selectAllAcknowledgedBtn.innerHTML = '<i class="bi bi-check-square me-1"></i> Select All';
-                }
-
-                // Update bulk action buttons
-                updateBulkActionButtons();
+                // Update section visibility
+                updateSectionVisibility();
             });
         });
 
-        // Delete all acknowledged alerts button
-        const deleteAllBtn = document.getElementById('delete-all-btn');
-        if (deleteAllBtn) {
-            deleteAllBtn.addEventListener('click', function() {
-                const acknowledgedItems = document.querySelectorAll('#acknowledged-alerts-section .timeline-item').length;
-                if (acknowledgedItems === 0) {
-                    alert('There are no acknowledged alerts to delete.');
-                    return;
+        function updateSectionVisibility() {
+            const unacknowledgedSection = document.getElementById('unacknowledgedSection');
+            const acknowledgedSection = document.getElementById('acknowledgedSection');
+
+            if (unacknowledgedSection) {
+                const visibleUnacknowledged = unacknowledgedSection.querySelectorAll('.alert-item[style=""]').length > 0 ||
+                                             unacknowledgedSection.querySelectorAll('.alert-item:not([style*="none"])').length > 0;
+                unacknowledgedSection.style.display = visibleUnacknowledged ? '' : 'none';
+            }
+
+            if (acknowledgedSection) {
+                const visibleAcknowledged = acknowledgedSection.querySelectorAll('.alert-item[style=""]').length > 0 ||
+                                           acknowledgedSection.querySelectorAll('.alert-item:not([style*="none"])').length > 0;
+                acknowledgedSection.style.display = visibleAcknowledged ? '' : 'none';
+            }
+
+            // Show empty state if both sections are hidden
+            const alertSummary = document.querySelector('.alert-summary');
+            const emptyState = document.querySelector('.alert-empty-state');
+
+            if ((!unacknowledgedSection || unacknowledgedSection.style.display === 'none') &&
+                (!acknowledgedSection || acknowledgedSection.style.display === 'none')) {
+
+                // Create empty state if it doesn't exist
+                if (!emptyState) {
+                    const emptyStateDiv = document.createElement('div');
+                    emptyStateDiv.className = 'alert-empty-state';
+                    emptyStateDiv.innerHTML = `
+                        <div class="empty-state-icon">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <h3 class="empty-state-title">No Matching Alerts</h3>
+                        <p class="empty-state-message">No alerts match your current filter criteria.</p>
+                    `;
+
+                    const cardBody = document.querySelector('.modern-card-body');
+                    if (alertSummary) {
+                        cardBody.insertBefore(emptyStateDiv, alertSummary.nextSibling);
+                    } else {
+                        cardBody.appendChild(emptyStateDiv);
+                    }
+                } else {
+                    emptyState.style.display = '';
                 }
 
-                if (confirm(`Are you sure you want to delete all ${acknowledgedItems} acknowledged alerts? This action cannot be undone.`)) {
-                    document.getElementById('delete-all-form').submit();
+                // Hide the summary
+                if (alertSummary) {
+                    alertSummary.style.display = 'none';
                 }
+            } else {
+                // Show the summary
+                if (alertSummary) {
+                    alertSummary.style.display = '';
+                }
+
+                // Hide empty state
+                if (emptyState) {
+                    emptyState.style.display = 'none';
+                }
+            }
+        }
+
+        // Initialize AJAX form submissions for better UX
+        initializeAjaxForms();
+
+        function initializeAjaxForms() {
+            // Acknowledge buttons
+            document.querySelectorAll('.acknowledge-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const form = this.closest('form');
+                    const alertId = this.getAttribute('data-alert-id');
+
+                    fetch(form.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Reload the page to show updated state
+                            window.location.reload();
+                        } else {
+                            showNotification('Error: ' + data.message, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification('An error occurred while processing your request.', 'danger');
+                    });
+                });
             });
+
+            // Unacknowledge buttons
+            document.querySelectorAll('.unacknowledge-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const form = this.closest('form');
+                    const alertId = this.getAttribute('data-alert-id');
+
+                    fetch(form.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Reload the page to show updated state
+                            window.location.reload();
+                        } else {
+                            showNotification('Error: ' + data.message, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification('An error occurred while processing your request.', 'danger');
+                    });
+                });
+            });
+
+            // Delete buttons
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+
+                    if (confirm('Are you sure you want to delete this alert?')) {
+                        const form = this.closest('form');
+                        const alertId = this.getAttribute('data-alert-id');
+
+                        fetch(form.action, {
+                            method: 'POST',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Reload the page to show updated state
+                                window.location.reload();
+                            } else {
+                                showNotification('Error: ' + data.message, 'danger');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            showNotification('An error occurred while processing your request.', 'danger');
+                        });
+                    }
+                });
+            });
+        }
+
+        // Function to show notifications
+        function showNotification(message, type) {
+            // Create notification container if it doesn't exist
+            let container = document.getElementById('notification-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notification-container';
+                container.style.position = 'fixed';
+                container.style.top = '20px';
+                container.style.right = '20px';
+                container.style.zIndex = '9999';
+                document.body.appendChild(container);
+            }
+
+            // Create notification
+            const notification = document.createElement('div');
+            notification.className = `modern-alert alert-${type}`;
+            notification.innerHTML = `
+                <div class="modern-alert-content">
+                    <div class="modern-alert-icon">
+                        <i class="bi bi-${type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-circle' : 'info-circle'}"></i>
+                    </div>
+                    <div class="modern-alert-message">${message}</div>
+                </div>
+                <button type="button" class="modern-alert-close">
+                    <i class="bi bi-x"></i>
+                </button>
+                <div class="alert-loading-bar"></div>
+            `;
+
+            // Add to container
+            container.appendChild(notification);
+
+            // Add event listeners
+            const closeBtn = notification.querySelector('.modern-alert-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    notification.classList.add('hide');
+                    setTimeout(() => {
+                        notification.remove();
+                    }, 600);
+                });
+            }
+
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                notification.classList.add('hide');
+                setTimeout(() => {
+                    notification.remove();
+                }, 600);
+            }, 5000);
         }
     });
 </script>

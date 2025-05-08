@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize search functionality
     initializeSearch();
 
+    // Initialize uptime charts with new interactive features
+    initializeUptimeCharts();
+
     // Auto-refresh is now initialized in app.js
 
     // Tooltips are now initialized in app.js
@@ -450,6 +453,185 @@ async function handleRefresh(domainId, _) {
 
 // Using the initializeAutoRefresh function from app.js
 
+// Initialize uptime charts with interactive features
+function initializeUptimeCharts() {
+    // Add time labels to uptime charts
+    document.querySelectorAll('.uptime-chart-modern').forEach(chart => {
+        const domain = chart.dataset.domain;
+
+        // Fix for newly added domains on page load
+        // Check if this chart has multiple colored segments when it should only have one
+        const segments = Array.from(chart.querySelectorAll('.uptime-segment-modern'));
+        const coloredSegments = segments.filter(segment =>
+            !segment.classList.contains('uptime-unknown-modern')
+        );
+
+        // If we have multiple colored segments, check if they're in an unusual pattern
+        if (coloredSegments.length > 1) {
+            const lastSegment = segments[segments.length - 1];
+            const hasColoredMiddleSegments = segments.slice(0, -1).some(segment =>
+                !segment.classList.contains('uptime-unknown-modern')
+            );
+
+            // If we have colored segments in the middle, it's likely a newly added domain
+            if (hasColoredMiddleSegments && !lastSegment.classList.contains('uptime-unknown-modern')) {
+                // Get the last segment's status
+                const lastStatus = lastSegment.classList.contains('uptime-up-modern') ? 'up' :
+                                  lastSegment.classList.contains('uptime-down-modern') ? 'down' : 'unknown';
+
+                // Make all other segments unknown
+                segments.forEach((segment, index) => {
+                    if (index < segments.length - 1) {
+                        segment.className = 'uptime-segment-modern uptime-unknown-modern';
+                    }
+                });
+
+                console.log(`Fixed uptime segments for newly added domain ${domain} on page load`);
+            }
+        }
+
+        // Add click event to open detailed view
+        chart.addEventListener('click', () => {
+            const domainRow = chart.closest('tr');
+            if (domainRow) {
+                const domainId = domainRow.dataset.domainId;
+                if (domainId) {
+                    window.location.href = `/domain/${domainId}`;
+                }
+            }
+        });
+    });
+
+    // Initialize timeframe buttons
+    document.querySelectorAll('.uptime-timeframe-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            // Prevent event bubbling to avoid triggering other click handlers
+            e.stopPropagation();
+
+            const domain = this.dataset.domain;
+            const timeframe = this.dataset.timeframe;
+
+            // Remove active class from all buttons in this group
+            this.parentNode.querySelectorAll('.uptime-timeframe-btn').forEach(b => {
+                b.classList.remove('active');
+            });
+
+            // Add active class to clicked button
+            this.classList.add('active');
+
+            // Show loading state
+            const chart = document.querySelector(`.uptime-chart[data-domain="${domain}"]`);
+            if (chart) {
+                chart.style.opacity = '0.6';
+
+                // Fetch new data based on timeframe
+                fetch(`/api/domains/${domain}/uptime?timeframe=${timeframe}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            updateUptimeChart(chart, data.segments, data.percentage);
+                        }
+                        chart.style.opacity = '1';
+                    })
+                    .catch(error => {
+                        console.error('Error fetching uptime data:', error);
+                        chart.style.opacity = '1';
+                    });
+            }
+        });
+    });
+}
+
+// Update uptime chart with new data
+function updateUptimeChart(chart, segments, percentage) {
+    // Clear existing segments
+    chart.innerHTML = '';
+
+    // Ensure we always have exactly 12 segments
+    let normalizedSegments = segments;
+    if (!segments || segments.length === 0) {
+        // If no segments provided, create 12 unknown segments
+        normalizedSegments = Array(12).fill('unknown');
+    } else if (segments.length < 12) {
+        // If fewer than 12 segments, pad with unknown at the beginning
+        normalizedSegments = Array(12 - segments.length).fill('unknown').concat(segments);
+    } else if (segments.length > 12) {
+        // If more than 12 segments, take only the last 12
+        normalizedSegments = segments.slice(segments.length - 12);
+    }
+
+    // Special case for newly added domains:
+    // For newly added domains, we should only show the last segment as colored
+
+    // Get the domain name from the chart's data attribute
+    const domainName = chart.dataset.domain;
+
+    // Check if this is a newly added domain by looking at the pattern of segments
+    const nonUnknownCount = normalizedSegments.filter(s => s !== 'unknown').length;
+    const hasColoredMiddleSegments = normalizedSegments.slice(0, -1).some(s => s !== 'unknown');
+
+    // If we have colored segments in the middle but the domain was just added,
+    // or if we have an unusual pattern of colored segments,
+    // it's likely that this is a newly added domain with incorrect history
+    if ((nonUnknownCount > 1 && hasColoredMiddleSegments) ||
+        (normalizedSegments.indexOf('up') > -1 && normalizedSegments.indexOf('up') < normalizedSegments.length - 1)) {
+
+        // Store the last segment status (current status)
+        const lastStatus = normalizedSegments[normalizedSegments.length - 1];
+
+        // If the last segment is colored, make all other segments unknown
+        if (lastStatus !== 'unknown') {
+            // Create a new array with all segments as unknown except the last one
+            normalizedSegments = normalizedSegments.map((status, index) =>
+                index === normalizedSegments.length - 1 ? lastStatus : 'unknown'
+            );
+
+            // Log for debugging
+            console.log(`Fixed uptime segments for newly added domain ${domainName}`);
+        }
+    }
+
+    // Create segments with modern design
+    normalizedSegments.forEach((status, index) => {
+        const segment = document.createElement('div');
+        segment.className = `uptime-segment-modern uptime-${status}-modern`;
+        segment.dataset.time = index;
+        segment.dataset.status = status;
+
+        // Add tooltip
+        const tooltip = document.createElement('span');
+        tooltip.className = 'uptime-tooltip-modern';
+        tooltip.textContent = `${status.charAt(0).toUpperCase() + status.slice(1)} - ${12 - index} hour(s) ago`;
+        segment.appendChild(tooltip);
+
+        chart.appendChild(segment);
+    });
+
+    // Update percentage with modern design
+    const container = chart.closest('.uptime-container');
+    if (container) {
+        // Find or create percentage element
+        let percentageElement = container.querySelector('.uptime-percentage-modern');
+        if (!percentageElement) {
+            percentageElement = document.createElement('div');
+            percentageElement.className = 'uptime-percentage-modern';
+            container.appendChild(percentageElement);
+        }
+
+        // Update content and classes
+        percentageElement.textContent = `${percentage}%`;
+        percentageElement.className = 'uptime-percentage-modern';
+
+        if (percentage >= 99) {
+            percentageElement.classList.add('uptime-high-modern');
+        } else if (percentage >= 90) {
+            percentageElement.classList.add('uptime-medium-modern');
+        } else {
+            percentageElement.classList.add('uptime-low-modern');
+        }
+    }
+}
+
 function updateDomainRow(row, data) {
     // Update SSL status if available
     if (data.ssl_status) {
@@ -512,6 +694,19 @@ function updateDomainRow(row, data) {
                 pingIndicator.classList.remove('ping-up', 'ping-down', 'ping-unknown');
                 // Add the new status class
                 pingIndicator.classList.add(`ping-${data.ping_status.status}`);
+            }
+        }
+    }
+
+    // Update uptime chart if available
+    if (data.uptime_percentage !== undefined) {
+        const uptimeCell = row.querySelector('td:nth-child(4)');
+        if (uptimeCell) {
+            const chart = uptimeCell.querySelector('.uptime-chart');
+            if (chart) {
+                // Always pass the segments, even if they're empty or undefined
+                // The updateUptimeChart function will handle normalization
+                updateUptimeChart(chart, data.uptime_segments || [], data.uptime_percentage || 0);
             }
         }
     }

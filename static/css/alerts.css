@@ -1,260 +1,304 @@
-/* Additional styles for the alerts page */
+/* Modern Alerts Page Styles */
 
-/* Restructure the timeline item to allow for better alignment */
-.timeline-item {
-    display: flex;
-    align-items: stretch;
-    position: relative;
-    width: 100%; /* Ensure full width */
-}
-
-/* Style the timeline icon to be centered vertically */
-.timeline-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    width: 32px; /* Reduced size */
-    height: 32px; /* Reduced size */
-    flex-shrink: 0;
-    margin: 0; /* Remove margin to use the gap from timeline-item */
-}
-
-/* Ensure the timeline content takes up the full height and has consistent width */
-.timeline-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    background-color: var(--card-bg);
-    border-radius: 0.5rem;
-    padding: 0.75rem 1rem; /* Reduced padding */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    min-height: 60px; /* Reduced minimum height */
-    width: calc(100% - 190px); /* Adjusted width for smaller icon and actions */
-    max-width: calc(100% - 190px); /* Ensure it doesn't grow beyond this width */
-}
-
-/* Style the timeline header to be a flex container */
-.timeline-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.25rem; /* Reduced margin */
-}
-
-/* Style the timeline text */
-.timeline-text {
-    font-weight: 500;
-    line-height: 1.3; /* Reduced line height */
-    margin-bottom: 0.25rem; /* Reduced margin */
-}
-
-/* Style the timeline meta to be a flex container with centered items */
-.timeline-meta {
+/* Alert Summary */
+.alert-summary {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.5rem; /* Reduced gap */
-    font-size: 0.8rem; /* Smaller font */
-    color: var(--text-muted);
-    margin-top: 0.25rem; /* Reduced margin */
-    min-height: 24px; /* Reduced height */
-    padding-right: 0.5rem; /* Add some padding to prevent text from touching the edge */
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: var(--card-bg);
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-/* Style individual meta items to be centered */
-.timeline-time,
-.timeline-domain,
-.timeline-meta .badge {
-    display: inline-flex;
+.alert-summary-item {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 22px; /* Reduced height */
-    padding: 0 0.25rem;
-    border-radius: 4px;
-}
-
-/* Style the domain specifically */
-.timeline-domain {
-    font-weight: 500;
-    color: var(--text-primary);
-    background-color: rgba(0, 0, 0, 0.03);
-    padding: 0.25rem 0.5rem !important;
-}
-
-/* Style the badge to be properly centered */
-.timeline-meta .badge {
-    padding: 0.15rem 0.4rem !important; /* Reduced padding */
-    font-weight: 500;
-    vertical-align: middle;
-    height: 22px; /* Reduced height to match other meta items */
-}
-
-/* Style the time specifically */
-.timeline-time {
-    color: var(--text-muted);
-    background-color: rgba(0, 0, 0, 0.02);
-    padding: 0.25rem 0.5rem !important;
-}
-
-/* Style the timeline actions */
-.timeline-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem; /* Reduced gap */
-    width: 140px; /* Reduced width */
-    flex-shrink: 0;
-}
-
-/* Style the action buttons */
-.timeline-actions .btn {
-    padding: 0.25rem 0.5rem; /* Reduced padding */
-    font-size: 0.8rem; /* Smaller font */
-    width: 130px; /* Reduced width */
-    text-align: center;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.25rem; /* Reduced gap */
-}
-
-/* Style the button icons */
-.timeline-actions .btn i {
-    font-size: 0.9rem; /* Smaller icon */
-}
-
-/* No connecting line - removed to prevent visual issues */
-
-/* Ensure proper spacing between timeline items */
-.timeline-item {
-    margin-bottom: 0.75rem; /* Reduced margin */
-    display: flex;
-    align-items: center;
-    gap: 0.75rem; /* Reduced gap */
-}
-
-.timeline-item:last-child {
-    margin-bottom: 0;
-}
-
-/* Style the card header layout */
-.modern-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-/* Style the filter button */
-.dropdown .btn-outline-secondary {
-    border-color: #dee2e6;
-    background-color: transparent;
-    font-size: 0.875rem;
-}
-
-.dropdown .btn-outline-secondary:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-}
-
-[data-bs-theme="dark"] .dropdown .btn-outline-secondary:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Style the different types of alert icons */
-.timeline-icon.ssl {
-    background-color: rgba(79, 70, 229, 0.1);
-    color: #4f46e5;
-}
-
-.timeline-icon.domain {
-    background-color: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
-}
-
-.timeline-icon.ping {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-}
-
-.timeline-icon.error {
-    background-color: rgba(107, 114, 128, 0.1);
-    color: #6b7280;
-}
-
-/* Style for acknowledged items */
-.timeline-item.acknowledged .timeline-content {
-    opacity: 0.7;
+    min-width: 100px;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
     background-color: rgba(0, 0, 0, 0.02);
 }
 
-[data-bs-theme="dark"] .timeline-item.acknowledged .timeline-content {
-    background-color: rgba(255, 255, 255, 0.02);
+[data-bs-theme="dark"] .alert-summary-item {
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
-/* Delete button styles */
-.btn-outline-danger {
-    color: #dc3545;
-    border-color: #dc3545;
+.alert-count {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
 }
 
-.btn-outline-danger:hover {
-    color: #fff;
-    background-color: #dc3545;
-    border-color: #dc3545;
+.alert-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
 }
 
-[data-bs-theme="dark"] .btn-outline-danger {
-    color: #f77;
-    border-color: #f77;
-}
-
-[data-bs-theme="dark"] .btn-outline-danger:hover {
-    color: #000;
-    background-color: #f77;
-    border-color: #f77;
-}
-
-/* Alert Section Styles */
+/* Alert Section */
 .alert-section {
-    margin-bottom: 1.25rem; /* Reduced margin */
-    padding-bottom: 0.75rem; /* Reduced padding */
+    margin-bottom: 2rem;
 }
 
 .alert-section:last-child {
     margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
 }
 
 .alert-section-title {
-    font-size: 1.1rem; /* Smaller font */
+    font-size: 1.1rem;
     font-weight: 600;
+    color: var(--text-color);
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
-    color: var(--text-color);
-    padding-bottom: 0.5rem; /* Reduced padding */
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 0.75rem; /* Reduced margin */
+    border-radius: 0.5rem 0.5rem 0 0;
 }
 
 .alert-section-title i {
     margin-right: 0.5rem;
 }
 
-/* Unacknowledged alerts section */
-.alert-section:first-child .alert-section-title {
-    color: var(--danger);
+/* Unacknowledged section title */
+#unacknowledgedSection .alert-section-title {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border-bottom-color: rgba(239, 68, 68, 0.2);
 }
 
-/* Acknowledged alerts section */
-.alert-section:last-child .alert-section-title {
+/* Acknowledged section title */
+#acknowledgedSection .alert-section-title {
+    background-color: rgba(107, 114, 128, 0.1);
+    color: #6b7280;
+    border-bottom-color: rgba(107, 114, 128, 0.2);
+}
+
+/* Alert Item */
+.alert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.alert-item {
+    display: flex;
+    background-color: rgba(239, 68, 68, 0.03); /* Very subtle red background */
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    transition: all 0.2s ease;
+    border-left: 4px solid #ef4444; /* Red border for unacknowledged alerts */
+}
+
+[data-bs-theme="dark"] .alert-item {
+    background-color: rgba(239, 68, 68, 0.05); /* Slightly stronger for dark mode */
+}
+
+.alert-item:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.alert-item.acknowledged {
+    opacity: 0.8;
+    background-color: var(--card-bg); /* Reset to normal background */
+    border-left-color: #6b7280; /* Gray border for acknowledged alerts */
+}
+
+[data-bs-theme="dark"] .alert-item.acknowledged {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Alert Icon */
+.alert-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    min-width: 50px;
+    font-size: 1.25rem;
+}
+
+.alert-icon-ssl {
+    background-color: rgba(79, 70, 229, 0.1);
+    color: #4f46e5;
+}
+
+.alert-icon-domain {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+}
+
+.alert-icon-ping {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.alert-icon-error {
+    background-color: rgba(107, 114, 128, 0.1);
+    color: #6b7280;
+}
+
+/* Alert Content */
+.alert-content {
+    flex: 1;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.alert-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.alert-domain {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.alert-domain a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.alert-domain a:hover {
+    text-decoration: underline;
+}
+
+.alert-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.alert-time {
     color: var(--text-muted);
 }
 
-/* Dark mode adjustments */
-[data-bs-theme="dark"] .alert-section-title {
-    border-bottom-color: var(--dark-border-color);
+.alert-type-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.alert-status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.badge.bg-ssl {
+    background-color: #4f46e5;
+    color: white;
+}
+
+.badge.bg-domain {
+    background-color: #f59e0b;
+    color: white;
+}
+
+.badge.bg-ping {
+    background-color: #ef4444;
+    color: white;
+}
+
+.badge.bg-warning {
+    background-color: #f59e0b;
+    color: white;
+}
+
+.badge.bg-expired {
+    background-color: #ef4444;
+    color: white;
+}
+
+.badge.bg-error {
+    background-color: #6b7280;
+    color: white;
+}
+
+.alert-message {
+    color: var(--text-color);
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.alert-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.alert-actions .btn {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.alert-actions .btn i {
+    font-size: 0.9rem;
+}
+
+/* Empty State */
+.alert-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    text-align: center;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    color: var(--success);
+    margin-bottom: 1rem;
+}
+
+.empty-state-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-message {
+    color: var(--text-muted);
+    max-width: 400px;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .alert-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .alert-meta {
+        margin-top: 0.25rem;
+    }
+
+    .alert-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .alert-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
 }

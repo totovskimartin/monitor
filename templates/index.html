@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/uptime-charts.css') }}">
+
 <style>
     .domain-name-link {
         color: var(--text-color);
@@ -93,9 +93,6 @@
                     <div class="search-box">
                         <input type="text" class="form-control" id="domainSearch" placeholder="Search domains...">
                     </div>
-                    <button id="refreshPingStatus" class="btn btn-outline-primary ms-3" title="Refresh ping status">
-                        <i class="bi bi-arrow-repeat"></i>
-                    </button>
                 </div>
             </div>
             <div class="modern-card-body">
@@ -172,29 +169,9 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="uptime-container">
-                                    <div class="uptime-chart" title="Last 12 hours uptime">
-                                        {% if domain.uptime_segments %}
-                                            {% for status in domain.uptime_segments %}
-                                                <div class="uptime-segment uptime-{{ status }}"></div>
-                                            {% endfor %}
-                                        {% else %}
-                                            {% for i in range(12) %}
-                                                <div class="uptime-segment uptime-unknown"></div>
-                                            {% endfor %}
-                                        {% endif %}
-                                    </div>
-                                    {% if domain.uptime_segments and domain.uptime_percentage is not none %}
-                                        <div class="uptime-percentage
-                                            {% if domain.uptime_percentage >= 99 %}uptime-high
-                                            {% elif domain.uptime_percentage >= 90 %}uptime-medium
-                                            {% else %}uptime-low{% endif %}">
-                                            {{ domain.uptime_percentage }}%
-                                        </div>
-                                    {% else %}
-                                        <div class="uptime-percentage">N/A</div>
-                                    {% endif %}
-                                </div>
+                                {% with domain_name=domain.name, is_new_domain=(domain.uptime_segments|length <= 2) %}
+                                    {% include 'uptime-chart.html' %}
+                                {% endwith %}
                             </td>
                             <td>
                                 <div class="action-buttons">
@@ -634,162 +611,13 @@
 <!-- Dashboard Scripts -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Handle ping indicators
-        async function refreshAllPingStatuses() {
-            // Show loading state on the refresh button
-            const refreshButton = document.getElementById('refreshPingStatus');
-            if (refreshButton) {
-                refreshButton.disabled = true;
-                refreshButton.innerHTML = '<i class="bi bi-arrow-repeat spin"></i>';
+        // Auto-refresh uptime data every 5 minutes
+        setInterval(() => {
+            // Refresh all uptime charts
+            if (window.uptimeChartModern && typeof window.uptimeChartModern.refresh === 'function') {
+                window.uptimeChartModern.refresh();
             }
-
-            try {
-                // Get all ping indicators
-                const indicators = document.querySelectorAll('.ping-indicator');
-                const totalDomains = indicators.length;
-                let processedDomains = 0;
-
-                // Process each domain
-                const promises = Array.from(indicators).map(async (indicator) => {
-                    const host = indicator.getAttribute('data-host');
-                    const row = indicator.closest('tr');
-
-                    try {
-                        // Make an AJAX call to refresh the ping status
-                        const response = await fetch(`/api/ping/${host}/refresh`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            }
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! Status: ${response.status}`);
-                        }
-
-                        const data = await response.json();
-
-                        if (data.success) {
-                            // Update the ping indicator
-                            indicator.classList.remove('ping-up', 'ping-down', 'ping-unknown');
-                            indicator.classList.add(`ping-${data.data.ping_status}`);
-                            indicator.setAttribute('title', `Ping status: ${data.data.ping_status}`);
-
-                            // Update uptime chart if available
-                            if (data.data.uptime_segments && row) {
-                                const uptimeChart = row.querySelector('.uptime-chart');
-                                if (uptimeChart) {
-                                    // Clear existing segments
-                                    uptimeChart.innerHTML = '';
-
-                                    // Add new segments
-                                    data.data.uptime_segments.forEach(status => {
-                                        const segment = document.createElement('div');
-                                        segment.className = `uptime-segment uptime-${status}`;
-                                        uptimeChart.appendChild(segment);
-                                    });
-                                }
-
-                                // Update uptime percentage if available
-                                if (data.data.uptime_percentage !== undefined) {
-                                    const uptimePercentage = row.querySelector('.uptime-percentage');
-                                    if (uptimePercentage) {
-                                        uptimePercentage.textContent = `${data.data.uptime_percentage}%`;
-
-                                        // Update the class based on percentage
-                                        uptimePercentage.className = 'uptime-percentage';
-                                        if (data.data.uptime_percentage >= 99) {
-                                            uptimePercentage.classList.add('uptime-high');
-                                        } else if (data.data.uptime_percentage >= 90) {
-                                            uptimePercentage.classList.add('uptime-medium');
-                                        } else {
-                                            uptimePercentage.classList.add('uptime-low');
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Flash success indicator with animation
-                            if (row) {
-                                const originalBackground = row.style.backgroundColor;
-                                row.style.backgroundColor = 'rgba(var(--bs-success-rgb), 0.1)';
-
-                                // Reset background after animation
-                                setTimeout(() => {
-                                    row.style.backgroundColor = originalBackground;
-                                }, 1500);
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`Error refreshing ping status for ${host}:`, error);
-                    }
-
-                    // Update progress
-                    processedDomains++;
-                });
-
-                // Wait for all domains to be processed
-                await Promise.all(promises);
-
-                // Show success message
-                const alertContainer = document.createElement('div');
-                alertContainer.className = 'alert alert-success alert-dismissible fade show';
-                alertContainer.setAttribute('role', 'alert');
-                alertContainer.innerHTML = `
-                    <i class="bi bi-check-circle-fill me-2"></i>
-                    Successfully refreshed ping status for all domains.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                `;
-
-                // Add the alert to the page
-                const container = document.querySelector('.dashboard-container');
-                if (container) {
-                    container.insertBefore(alertContainer, container.firstChild);
-
-                    // Auto-dismiss after 5 seconds
-                    setTimeout(() => {
-                        const bsAlert = new bootstrap.Alert(alertContainer);
-                        bsAlert.close();
-                    }, 5000);
-                }
-            } catch (error) {
-                console.error('Error refreshing ping statuses:', error);
-
-                // Show error message
-                const alertContainer = document.createElement('div');
-                alertContainer.className = 'alert alert-danger alert-dismissible fade show';
-                alertContainer.setAttribute('role', 'alert');
-                alertContainer.innerHTML = `
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    Error refreshing ping status: ${error.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                `;
-
-                // Add the alert to the page
-                const container = document.querySelector('.dashboard-container');
-                if (container) {
-                    container.insertBefore(alertContainer, container.firstChild);
-                }
-            } finally {
-                // Reset button state
-                if (refreshButton) {
-                    refreshButton.disabled = false;
-                    refreshButton.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-                }
-            }
-        }
-
-        // Set up a button to manually refresh ping status
-        const refreshButton = document.getElementById('refreshPingStatus');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', function() {
-                refreshAllPingStatuses();
-            });
-        }
-
-        // Update every 5 minutes (300000 ms)
-        // We use a longer interval since we're making actual API calls
-        setInterval(refreshAllPingStatuses, 300000);
+        }, 300000); // 5 minutes
     });
 </script>
 {% endblock %}

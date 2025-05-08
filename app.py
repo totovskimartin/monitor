@@ -14,7 +14,7 @@ import csv
 import threading
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field
-import notifications
+import notifications as notifications_module
 
 # Set up logging
 def setup_logging():
@@ -352,13 +352,37 @@ import auth
 import database as db
 import secrets
 from database import get_user_preference, set_user_preference
+from api.uptime_api import uptime_api
 
 app = Flask(__name__, static_folder='static')
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 
+# Register API blueprints
+app.register_blueprint(uptime_api)
+
 # Initialize authentication system and create default admin user if needed
 auth.initialize_auth()
 logger.info("Authentication system initialized")
+
+# Initialize scheduler for background tasks
+def init_app_scheduler():
+    """Initialize the scheduler for background tasks"""
+    if os.environ.get('DISABLE_SCHEDULER') == 'true':
+        logger.info("Scheduler disabled by environment variable")
+        return
+
+    try:
+        import scheduler
+        scheduler.init_scheduler(app)
+        logger.info("Scheduler initialized")
+    except ImportError:
+        logger.warning("APScheduler not installed, skipping scheduler initialization")
+    except Exception as e:
+        logger.error(f"Error initializing scheduler: {e}")
+
+# Initialize scheduler after app is fully configured
+if not os.environ.get('FLASK_ENV') == 'test':
+    init_app_scheduler()
 
 # CSRF token generation
 def generate_csrf_token():
@@ -914,6 +938,7 @@ DEFAULT_NOTIFICATIONS = {
         'smtp_port': '',
         'smtp_username': '',
         'smtp_password': '',
+        'from_email': '',
         'notification_email': '',
         'warning_threshold_days': 10
     },
@@ -963,7 +988,9 @@ def load_config():
         'email_settings': db.get_setting('email_settings', DEFAULT_EMAIL_SETTINGS),
         'app_settings': db.get_setting('app_settings', DEFAULT_APP_SETTINGS),
         'api_settings': db.get_setting('api_settings', {}),
-        'notifications': db.get_setting('notifications', DEFAULT_NOTIFICATIONS)
+        'notifications': db.get_setting('notifications', DEFAULT_NOTIFICATIONS),
+        'acknowledged_alerts': db.get_setting('acknowledged_alerts', []),
+        'deleted_alerts': db.get_setting('deleted_alerts', [])
     }
     return config
 
@@ -971,7 +998,8 @@ def save_config(data):
     """Compatibility function that saves configuration to database"""
     # Save each section of the config to the database
     for key in ['ssl_domains', 'domain_expiry', 'ping_hosts', 'email_settings',
-                'app_settings', 'api_settings', 'notifications']:
+                'app_settings', 'api_settings', 'notifications',
+                'acknowledged_alerts', 'deleted_alerts']:
         if key in data:
             db.set_setting(key, data[key])
 
@@ -1006,6 +1034,9 @@ def get_app_settings() -> AppSettings:
     """Get app settings from database"""
     settings = db.get_setting('app_settings', DEFAULT_APP_SETTINGS)
 
+    # Log the raw settings for debugging
+    logger.debug(f"Raw app settings from database: {settings}")
+
     # Handle auto_refresh_interval safely
     try:
         auto_refresh_interval = int(settings.get('auto_refresh_interval', 5))
@@ -1016,17 +1047,23 @@ def get_app_settings() -> AppSettings:
     # Handle warning_threshold_days safely
     try:
         warning_threshold = int(settings.get('warning_threshold_days', 10))
+        logger.debug(f"Retrieved warning_threshold_days from database: {warning_threshold}")
     except (ValueError, TypeError):
         logger.warning(f"Invalid warning_threshold_days value: {settings.get('warning_threshold_days')}. Using default value of 10.")
         warning_threshold = 10
 
-    return AppSettings(
+    app_settings = AppSettings(
         auto_refresh_enabled=settings.get('auto_refresh_enabled', False),
         auto_refresh_interval=auto_refresh_interval,
         theme=settings.get('theme', 'light'),
         timezone=settings.get('timezone', 'UTC'),
         warning_threshold_days=warning_threshold
     )
+
+    # Log the final app settings object for debugging
+    logger.debug(f"Final app settings object: {app_settings}")
+
+    return app_settings
 
 def get_notification_settings() -> NotificationSettings:
     """Get notification settings for all platforms from database"""
@@ -1410,10 +1447,11 @@ def check_domain_expiry(domain: str) -> DomainStatus:
         # Get registrar info
         registrar = whois_data.get('registrar', default_registrar)
 
-        # Get warning threshold from app settings
+        # Get warning threshold from app settings - always get fresh settings
         app_settings = get_app_settings()
         try:
             warning_threshold = int(app_settings.warning_threshold_days)
+            logger.debug(f"Using warning threshold of {warning_threshold} days for domain expiry check of {domain}")
         except (ValueError, TypeError):
             logger.warning(f"Invalid warning_threshold_days: {app_settings.warning_threshold_days}. Using default value of 10.")
             warning_threshold = 10
@@ -1424,9 +1462,10 @@ def check_domain_expiry(domain: str) -> DomainStatus:
             logger.warning(f"Domain {domain} has expired")
         elif days_remaining <= warning_threshold:
             status = 'warning'
-            logger.warning(f"Domain {domain} will expire in {days_remaining} days")
+            logger.warning(f"Domain {domain} will expire in {days_remaining} days (warning threshold: {warning_threshold} days)")
         else:
             status = 'valid'
+            logger.debug(f"Domain {domain} is valid, will expire in {days_remaining} days (warning threshold: {warning_threshold} days)")
 
         # Get ping status
         ping_result = check_ping(domain)
@@ -1455,25 +1494,25 @@ def check_domain_expiry(domain: str) -> DomainStatus:
 
                 # Send notifications to all enabled platforms
                 if notification_settings.email.get('enabled', False):
-                    notifications.send_domain_expiry_notification('email', notification_settings.email, domain_status)
+                    notifications_module.send_domain_expiry_notification('email', notification_settings.email, domain_status)
 
                 if notification_settings.teams.get('enabled', False):
-                    notifications.send_domain_expiry_notification('teams', notification_settings.teams, domain_status)
+                    notifications_module.send_domain_expiry_notification('teams', notification_settings.teams, domain_status)
 
                 if notification_settings.slack.get('enabled', False):
-                    notifications.send_domain_expiry_notification('slack', notification_settings.slack, domain_status)
+                    notifications_module.send_domain_expiry_notification('slack', notification_settings.slack, domain_status)
 
                 if notification_settings.discord.get('enabled', False):
-                    notifications.send_domain_expiry_notification('discord', notification_settings.discord, domain_status)
+                    notifications_module.send_domain_expiry_notification('discord', notification_settings.discord, domain_status)
 
                 if notification_settings.telegram.get('enabled', False):
-                    notifications.send_domain_expiry_notification('telegram', notification_settings.telegram, domain_status)
+                    notifications_module.send_domain_expiry_notification('telegram', notification_settings.telegram, domain_status)
 
                 if notification_settings.webhook.get('enabled', False):
-                    notifications.send_domain_expiry_notification('webhook', notification_settings.webhook, domain_status)
+                    notifications_module.send_domain_expiry_notification('webhook', notification_settings.webhook, domain_status)
 
                 if notification_settings.sms.get('enabled', False):
-                    notifications.send_domain_expiry_notification('sms', notification_settings.sms, domain_status)
+                    notifications_module.send_domain_expiry_notification('sms', notification_settings.sms, domain_status)
             except Exception as notify_error:
                 logger.error(f"Error sending notifications for {domain}: {str(notify_error)}")
                 # Continue even if notification fails
@@ -1549,6 +1588,84 @@ def get_cached_ssl_data(domain):
         return cached_data
 
     return None
+
+def update_ssl_status(domain, warning_threshold):
+    """Update the status of cached SSL certificate data based on the new warning threshold"""
+    cache_key = f"ssl_{domain}"
+    cached_data = db.get_cache(cache_key)
+
+    if not cached_data:
+        logger.debug(f"No cached SSL data found for {domain}")
+        return False
+
+    # Get days remaining
+    try:
+        days_remaining = int(cached_data.get('days_remaining', -1))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid days_remaining in SSL cache for {domain}: {cached_data.get('days_remaining')}. Cannot update status.")
+        return False
+
+    # Calculate new status based on days remaining and new warning threshold
+    old_status = cached_data.get('status')
+
+    # Only update status if it's not an error
+    if old_status != 'error':
+        if days_remaining <= 0:
+            new_status = 'expired'
+        elif days_remaining <= warning_threshold:
+            new_status = 'warning'
+        else:
+            new_status = 'valid'
+
+        # Always update the cache with the new status, even if it hasn't changed
+        # This ensures the warning threshold is consistently applied
+        logger.info(f"Updating SSL status for {domain} from {old_status} to {new_status} (days remaining: {days_remaining}, new threshold: {warning_threshold})")
+        cached_data['status'] = new_status
+        db.set_cache(cache_key, cached_data, SSL_CACHE_EXPIRY)
+
+        # Return True if the status changed
+        return old_status != new_status
+
+    return False
+
+def update_domain_expiry_status(domain, warning_threshold):
+    """Update the status of cached domain expiry data based on the new warning threshold"""
+    cache_key = f"domain_expiry_{domain}"
+    cached_data = db.get_cache(cache_key)
+
+    if not cached_data:
+        logger.debug(f"No cached domain expiry data found for {domain}")
+        return False
+
+    # Get days remaining
+    try:
+        days_remaining = int(cached_data.get('days_remaining', -1))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid days_remaining in domain expiry cache for {domain}: {cached_data.get('days_remaining')}. Cannot update status.")
+        return False
+
+    # Calculate new status based on days remaining and new warning threshold
+    old_status = cached_data.get('status')
+
+    # Only update status if it's not an error
+    if old_status != 'error':
+        if days_remaining <= 0:
+            new_status = 'expired'
+        elif days_remaining <= warning_threshold:
+            new_status = 'warning'
+        else:
+            new_status = 'valid'
+
+        # Always update the cache with the new status, even if it hasn't changed
+        # This ensures the warning threshold is consistently applied
+        logger.info(f"Updating domain expiry status for {domain} from {old_status} to {new_status} (days remaining: {days_remaining}, new threshold: {warning_threshold})")
+        cached_data['status'] = new_status
+        db.set_cache(cache_key, cached_data, DOMAIN_EXPIRY_CACHE_EXPIRY)
+
+        # Return True if the status changed
+        return old_status != new_status
+
+    return False
 
 def cache_ssl_data(domain, cert_status):
     """Cache SSL certificate data for a domain"""
@@ -1634,12 +1751,13 @@ def check_certificate(domain: str) -> CertificateStatus:
 
                 logger.info(f"Certificate for {domain} expires on {expiry_date}, {days_remaining} days remaining")
 
-                # Get warning threshold from app settings
+                # Get warning threshold from app settings - always get fresh settings
                 app_settings = get_app_settings()
 
                 # Ensure warning_threshold_days is an integer
                 try:
                     warning_threshold = int(app_settings.warning_threshold_days)
+                    logger.debug(f"Using warning threshold of {warning_threshold} days for SSL certificate check of {domain}")
                 except (ValueError, TypeError):
                     logger.warning(f"Invalid warning_threshold_days: {app_settings.warning_threshold_days}. Using default value of 10.")
                     warning_threshold = 10
@@ -1650,7 +1768,7 @@ def check_certificate(domain: str) -> CertificateStatus:
                     logger.warning(f"Certificate for {domain} has expired")
                 elif days_remaining <= warning_threshold:
                     status = 'warning'
-                    logger.warning(f"Certificate for {domain} will expire in {days_remaining} days")
+                    logger.warning(f"Certificate for {domain} will expire in {days_remaining} days (warning threshold: {warning_threshold} days)")
 
                 # Check ping status
                 ping_result = check_ping(domain)
@@ -1670,36 +1788,84 @@ def check_certificate(domain: str) -> CertificateStatus:
                 if status in ['warning', 'expired']:
                     # Get notification settings
                     notification_settings = get_notification_settings()
-                    logger.info(f"Sending notifications for {domain} certificate ({status})")
 
-                    # Send notifications to all enabled platforms
-                    if notification_settings.email.get('enabled', False):
-                        logger.debug(f"Sending email notification for {domain}")
-                        notifications.send_certificate_expiry_notification('email', notification_settings.email, cert_status)
+                    # Check if we should send a notification based on previous notifications
+                    should_notify = db.should_send_notification(domain, 'ssl', status)
 
-                    if notification_settings.teams.get('enabled', False):
-                        logger.debug(f"Sending Teams notification for {domain}")
-                        notifications.send_certificate_expiry_notification('teams', notification_settings.teams, cert_status)
+                    if should_notify:
+                        logger.info(f"Sending notifications for {domain} certificate ({status})")
+                        notifications_sent = False
 
-                    if notification_settings.slack.get('enabled', False):
-                        logger.debug(f"Sending Slack notification for {domain}")
-                        notifications.send_certificate_expiry_notification('slack', notification_settings.slack, cert_status)
+                        # Send notifications to all enabled platforms
+                        if notification_settings.email.get('enabled', False):
+                            logger.debug(f"Sending email notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('email', notification_settings.email, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"Email notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send email notification for {domain}: {message}")
 
-                    if notification_settings.discord.get('enabled', False):
-                        logger.debug(f"Sending Discord notification for {domain}")
-                        notifications.send_certificate_expiry_notification('discord', notification_settings.discord, cert_status)
+                        if notification_settings.teams.get('enabled', False):
+                            logger.debug(f"Sending Teams notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('teams', notification_settings.teams, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"Teams notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send Teams notification for {domain}: {message}")
 
-                    if notification_settings.telegram.get('enabled', False):
-                        logger.debug(f"Sending Telegram notification for {domain}")
-                        notifications.send_certificate_expiry_notification('telegram', notification_settings.telegram, cert_status)
+                        if notification_settings.slack.get('enabled', False):
+                            logger.debug(f"Sending Slack notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('slack', notification_settings.slack, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"Slack notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send Slack notification for {domain}: {message}")
 
-                    if notification_settings.webhook.get('enabled', False):
-                        logger.debug(f"Sending Webhook notification for {domain}")
-                        notifications.send_certificate_expiry_notification('webhook', notification_settings.webhook, cert_status)
+                        if notification_settings.discord.get('enabled', False):
+                            logger.debug(f"Sending Discord notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('discord', notification_settings.discord, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"Discord notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send Discord notification for {domain}: {message}")
 
-                    if notification_settings.sms.get('enabled', False):
-                        logger.debug(f"Sending SMS notification for {domain}")
-                        notifications.send_certificate_expiry_notification('sms', notification_settings.sms, cert_status)
+                        if notification_settings.telegram.get('enabled', False):
+                            logger.debug(f"Sending Telegram notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('telegram', notification_settings.telegram, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"Telegram notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send Telegram notification for {domain}: {message}")
+
+                        if notification_settings.webhook.get('enabled', False):
+                            logger.debug(f"Sending Webhook notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('webhook', notification_settings.webhook, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"Webhook notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send Webhook notification for {domain}: {message}")
+
+                        if notification_settings.sms.get('enabled', False):
+                            logger.debug(f"Sending SMS notification for {domain}")
+                            success, message = notifications_module.send_certificate_expiry_notification('sms', notification_settings.sms, cert_status)
+                            if success:
+                                notifications_sent = True
+                                logger.info(f"SMS notification sent for {domain}: {message}")
+                            else:
+                                logger.error(f"Failed to send SMS notification for {domain}: {message}")
+
+                        # Log the notification if any were sent successfully
+                        if notifications_sent:
+                            db.log_notification_sent(domain, 'ssl', status)
+                            logger.info(f"Logged notification for {domain} SSL certificate ({status})")
+                    else:
+                        logger.info(f"Skipping notification for {domain} SSL certificate ({status}) - already sent recently")
 
                 return cert_status
     except ssl.SSLError as e:
@@ -2045,39 +2211,58 @@ def alerts():
         domain_name = domain['name']
         # Check if domain is monitored for SSL
         if domain['ssl_monitored']:
-            cert_status = check_certificate(domain_name)
+            try:
+                cert_status = check_certificate(domain_name)
+                logger.debug(f"SSL check for {domain_name}: status={cert_status.status}, days_remaining={cert_status.days_remaining}")
 
-            if cert_status.status == 'warning':
-                alert_id = generate_alert_id('SSL', domain_name, 'warning')
-                # Skip if this alert has been deleted
-                if alert_id in deleted_alerts:
-                    continue
-                is_acknowledged = alert_id in acknowledged_alerts
-                alerts.append({
-                    'id': alert_id,
-                    'type': 'SSL',
-                    'icon': 'shield-exclamation',
-                    'message': f'SSL certificate for {domain_name} will expire in {cert_status.days_remaining} days',
-                    'time': current_time,
-                    'domain': domain_name,
-                    'acknowledged': is_acknowledged
-                })
-            elif cert_status.status == 'expired':
-                alert_id = generate_alert_id('SSL', domain_name, 'expired')
-                # Skip if this alert has been deleted
-                if alert_id in deleted_alerts:
-                    continue
-                is_acknowledged = alert_id in acknowledged_alerts
-                alerts.append({
-                    'id': alert_id,
-                    'type': 'SSL',
-                    'icon': 'shield-x',
-                    'message': f'SSL certificate for {domain_name} has expired',
-                    'time': current_time,
-                    'domain': domain_name,
-                    'acknowledged': is_acknowledged
-                })
-            elif cert_status.status == 'error':
+                if cert_status.status == 'warning':
+                    alert_id = generate_alert_id('SSL', domain_name, 'warning')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'SSL',
+                        'icon': 'shield-exclamation',
+                        'message': f'SSL certificate for {domain_name} will expire in {cert_status.days_remaining} days',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+                elif cert_status.status == 'expired':
+                    alert_id = generate_alert_id('SSL', domain_name, 'expired')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'SSL',
+                        'icon': 'shield-x',
+                        'message': f'SSL certificate for {domain_name} has expired',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+                elif cert_status.status == 'error':
+                    alert_id = generate_alert_id('SSL', domain_name, 'error')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'Error',
+                        'icon': 'exclamation-triangle',
+                        'message': f'Error checking SSL certificate for {domain_name}',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+            except Exception as e:
+                logger.error(f"Error checking SSL certificate for {domain_name}: {str(e)}")
+                # Create an error alert for this domain
                 alert_id = generate_alert_id('SSL', domain_name, 'error')
                 # Skip if this alert has been deleted
                 if alert_id in deleted_alerts:
@@ -2095,39 +2280,58 @@ def alerts():
 
         # Check if domain is monitored for expiry
         if domain['expiry_monitored']:
-            domain_status = check_domain_expiry(domain_name)
+            try:
+                domain_status = check_domain_expiry(domain_name)
+                logger.debug(f"Domain expiry check for {domain_name}: status={domain_status.status}, days_remaining={domain_status.days_remaining}")
 
-            if domain_status.status == 'warning':
-                alert_id = generate_alert_id('Domain', domain_name, 'warning')
-                # Skip if this alert has been deleted
-                if alert_id in deleted_alerts:
-                    continue
-                is_acknowledged = alert_id in acknowledged_alerts
-                alerts.append({
-                    'id': alert_id,
-                    'type': 'Domain',
-                    'icon': 'calendar-exclamation',
-                    'message': f'Domain {domain_name} will expire in {domain_status.days_remaining} days',
-                    'time': current_time,
-                    'domain': domain_name,
-                    'acknowledged': is_acknowledged
-                })
-            elif domain_status.status == 'expired':
-                alert_id = generate_alert_id('Domain', domain_name, 'expired')
-                # Skip if this alert has been deleted
-                if alert_id in deleted_alerts:
-                    continue
-                is_acknowledged = alert_id in acknowledged_alerts
-                alerts.append({
-                    'id': alert_id,
-                    'type': 'Domain',
-                    'icon': 'calendar-x',
-                    'message': f'Domain {domain_name} has expired',
-                    'time': current_time,
-                    'domain': domain_name,
-                    'acknowledged': is_acknowledged
-                })
-            elif domain_status.status == 'error':
+                if domain_status.status == 'warning':
+                    alert_id = generate_alert_id('Domain', domain_name, 'warning')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'Domain',
+                        'icon': 'calendar-exclamation',
+                        'message': f'Domain {domain_name} will expire in {domain_status.days_remaining} days',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+                elif domain_status.status == 'expired':
+                    alert_id = generate_alert_id('Domain', domain_name, 'expired')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'Domain',
+                        'icon': 'calendar-x',
+                        'message': f'Domain {domain_name} has expired',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+                elif domain_status.status == 'error':
+                    alert_id = generate_alert_id('Domain', domain_name, 'error')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'Error',
+                        'icon': 'exclamation-triangle',
+                        'message': f'Error checking expiry for domain {domain_name}',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+            except Exception as e:
+                logger.error(f"Error checking domain expiry for {domain_name}: {str(e)}")
+                # Create an error alert for this domain
                 alert_id = generate_alert_id('Domain', domain_name, 'error')
                 # Skip if this alert has been deleted
                 if alert_id in deleted_alerts:
@@ -2145,41 +2349,53 @@ def alerts():
 
         # Check if domain is monitored for ping
         if domain['ping_monitored']:
-            # If we already checked this domain for SSL or expiry, we already have ping status
-            # Otherwise, do a separate ping check
-            ping_status = None
-
-            # Try to find existing ping status from previous checks
-            for alert in alerts:
-                if alert['domain'] == domain_name and 'ping_status' in alert:
-                    ping_status = alert['ping_status']
-                    break
-
-            if ping_status is None:
+            try:
+                # Always do a fresh ping check
                 ping_result = check_ping(domain_name)
                 ping_status = ping_result['status']
+                logger.debug(f"Ping check for {domain_name}: status={ping_status}")
 
-            if ping_status == 'down':
-                alert_id = generate_alert_id('Ping', domain_name, 'down')
+                if ping_status == 'down':
+                    alert_id = generate_alert_id('Ping', domain_name, 'down')
+                    # Skip if this alert has been deleted
+                    if alert_id in deleted_alerts:
+                        continue
+                    is_acknowledged = alert_id in acknowledged_alerts
+                    alerts.append({
+                        'id': alert_id,
+                        'type': 'Ping',
+                        'icon': 'wifi-off',
+                        'message': f'Host {domain_name} is down',
+                        'time': current_time,
+                        'domain': domain_name,
+                        'acknowledged': is_acknowledged
+                    })
+            except Exception as e:
+                logger.error(f"Error checking ping for {domain_name}: {str(e)}")
+                # Create an error alert for this domain
+                alert_id = generate_alert_id('Ping', domain_name, 'error')
                 # Skip if this alert has been deleted
                 if alert_id in deleted_alerts:
                     continue
                 is_acknowledged = alert_id in acknowledged_alerts
                 alerts.append({
                     'id': alert_id,
-                    'type': 'Ping',
-                    'icon': 'wifi-off',
-                    'message': f'Host {domain_name} is down',
+                    'type': 'Error',
+                    'icon': 'exclamation-triangle',
+                    'message': f'Error checking ping for {domain_name}',
                     'time': current_time,
                     'domain': domain_name,
                     'acknowledged': is_acknowledged
                 })
 
     # Sort alerts by acknowledgment status (unacknowledged first) and then by time (newest first)
-    alerts.sort(key=lambda x: (x['acknowledged'], x['time']), reverse=True)
+    alerts.sort(key=lambda x: (x['acknowledged'], x['time']))
 
     end_time = time.time()
     logger.debug(f"Alerts page loaded in {end_time - start_time:.2f} seconds")
+    logger.debug(f"Number of alerts found: {len(alerts)}")
+    for alert in alerts:
+        logger.debug(f"Alert: {alert['id']} - {alert['message']} - Acknowledged: {alert['acknowledged']}")
 
     return render_template('alerts.html', alerts=alerts)
 
@@ -2187,6 +2403,8 @@ def alerts():
 def acknowledge_alert(alert_id):
     """Acknowledge an alert"""
     config = load_config()
+    success = False
+    message = ""
 
     if 'acknowledged_alerts' not in config:
         config['acknowledged_alerts'] = []
@@ -2292,9 +2510,26 @@ def acknowledge_alert(alert_id):
                     organization_id=organization_id
                 )
 
-            flash(f"Alert '{alert_details['message']}' acknowledged", 'success')
+            success = True
+            message = f"Alert '{alert_details['message']}' acknowledged"
         else:
-            flash("Alert not found", 'error')
+            message = "Alert not found"
+    else:
+        success = True
+        message = "Alert already acknowledged"
+
+    # Check if this is an AJAX request
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({
+            'success': success,
+            'message': message
+        })
+
+    # For regular form submissions, flash the message and redirect
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'error')
 
     return redirect(url_for('alerts'))
 
@@ -2306,6 +2541,8 @@ def health_check():
 def unacknowledge_alert(alert_id):
     """Remove acknowledgment from an alert"""
     config = load_config()
+    success = False
+    message = ""
 
     if 'acknowledged_alerts' in config and alert_id in config['acknowledged_alerts']:
         # Get alert details before unacknowledging
@@ -2390,9 +2627,23 @@ def unacknowledge_alert(alert_id):
                 username=username
             )
 
-        flash('Alert acknowledgment removed', 'success')
+        success = True
+        message = 'Alert acknowledgment removed'
     else:
-        flash('Alert was not acknowledged', 'info')
+        message = 'Alert was not acknowledged'
+
+    # Check if this is an AJAX request
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({
+            'success': success,
+            'message': message
+        })
+
+    # For regular form submissions, flash the message and redirect
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'info')
 
     return redirect(url_for('alerts'))
 
@@ -2400,6 +2651,8 @@ def unacknowledge_alert(alert_id):
 def delete_alert(alert_id):
     """Delete an acknowledged alert"""
     config = load_config()
+    success = False
+    message = ""
 
     # Only allow deletion of acknowledged alerts
     if 'acknowledged_alerts' in config and alert_id in config['acknowledged_alerts']:
@@ -2493,9 +2746,23 @@ def delete_alert(alert_id):
                 username=username
             )
 
-        flash('Alert deleted successfully', 'success')
+        success = True
+        message = 'Alert deleted successfully'
     else:
-        flash('Only acknowledged alerts can be deleted', 'warning')
+        message = 'Only acknowledged alerts can be deleted'
+
+    # Check if this is an AJAX request
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({
+            'success': success,
+            'message': message
+        })
+
+    # For regular form submissions, flash the message and redirect
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'warning')
 
     return redirect(url_for('alerts'))
 
@@ -4953,6 +5220,46 @@ def app_settings():
     user = auth.get_current_user()
     current_org = user.get('current_organization')
 
+    # We've removed the refresh button, but keeping this code in case it's needed in the future
+    if request.args.get('refresh') == 'true':
+        # Get app settings
+        settings = get_app_settings()
+        warning_threshold = settings.warning_threshold_days
+
+        # Get all domains
+        all_domains = []
+        config = load_config()
+
+        # Add SSL domains
+        for entry in config.get('ssl_domains', []):
+            domain = entry.get('url')
+            if domain and domain not in all_domains:
+                all_domains.append(domain)
+
+        # Add domain expiry domains
+        for entry in config.get('domain_expiry', []):
+            domain = entry.get('name')
+            if domain and domain not in all_domains:
+                all_domains.append(domain)
+
+        # Update status for all domains based on current warning threshold
+        domains_updated = 0
+        for domain in all_domains:
+            # Update SSL certificate status
+            ssl_updated = update_ssl_status(domain, warning_threshold)
+            # Update domain expiry status
+            domain_updated = update_domain_expiry_status(domain, warning_threshold)
+
+            if ssl_updated or domain_updated:
+                domains_updated += 1
+
+        if domains_updated > 0:
+            flash(f'Status updated for {domains_updated} domains using current warning threshold of {warning_threshold} days.', 'success')
+        else:
+            flash(f'No status changes needed with current warning threshold of {warning_threshold} days.', 'info')
+
+        return redirect(url_for('app_settings'))
+
     if request.method == 'POST':
         form_type = request.form.get('form_type')
         config = load_config()
@@ -4988,14 +5295,66 @@ def app_settings():
                 # If pytz is not available, accept any timezone value
                 logger.warning("pytz not available, timezone validation skipped")
 
-            config['app_settings']['warning_threshold_days'] = warning_threshold
-            config['app_settings']['auto_refresh_enabled'] = 'auto_refresh_enabled' in request.form
-            config['app_settings']['auto_refresh_interval'] = auto_refresh_interval
-            config['app_settings']['timezone'] = timezone
+            # Check if warning threshold has changed
+            old_warning_threshold = config['app_settings'].get('warning_threshold_days', 10)
+            threshold_changed = int(old_warning_threshold) != warning_threshold
+
+            if threshold_changed:
+                logger.info(f"Warning threshold changed from {old_warning_threshold} to {warning_threshold}. Clearing all certificate and domain expiry caches.")
+
+            # Update app settings
+            app_settings = {
+                'warning_threshold_days': warning_threshold,
+                'auto_refresh_enabled': 'auto_refresh_enabled' in request.form,
+                'auto_refresh_interval': auto_refresh_interval,
+                'timezone': timezone,
+                'theme': config['app_settings'].get('theme', 'light')  # Preserve existing theme
+            }
+
+            # Save app settings directly to database
+            db.set_setting('app_settings', app_settings)
+
+            # Update the config object for compatibility
+            config['app_settings'] = app_settings
 
             # Also update the email notification settings to use the same warning threshold
             if 'notifications' in config and 'email' in config['notifications']:
                 config['notifications']['email']['warning_threshold_days'] = warning_threshold
+
+            # Always update the status of all cached SSL and domain expiry data when settings are saved
+            # Get all domains
+            all_domains = []
+
+            # Add SSL domains
+            for entry in config.get('ssl_domains', []):
+                domain = entry.get('url')
+                if domain and domain not in all_domains:
+                    all_domains.append(domain)
+
+            # Add domain expiry domains
+            for entry in config.get('domain_expiry', []):
+                domain = entry.get('name')
+                if domain and domain not in all_domains:
+                    all_domains.append(domain)
+
+            # Update status for all domains based on new warning threshold
+            domains_updated = 0
+            for domain in all_domains:
+                # Update SSL certificate status
+                ssl_updated = update_ssl_status(domain, warning_threshold)
+                # Update domain expiry status
+                domain_updated = update_domain_expiry_status(domain, warning_threshold)
+
+                if ssl_updated or domain_updated:
+                    domains_updated += 1
+
+            if threshold_changed:
+                if domains_updated > 0:
+                    flash(f'Warning threshold updated to {warning_threshold} days. Status updated for {domains_updated} domains.', 'success')
+                else:
+                    flash(f'Warning threshold updated to {warning_threshold} days.', 'success')
+            else:
+                flash('Settings saved successfully.', 'success')
 
             # Get WHOIS API key
             whois_api_key = request.form.get('whois_api_key', '').strip()
@@ -5032,11 +5391,14 @@ def app_settings():
 
         return redirect(url_for('app_settings'))
 
+    # Get app settings directly from the database to ensure we have the latest values
     settings = get_app_settings()
 
-    # Get warning threshold from email settings for backward compatibility
-    email_settings = get_email_settings()
-    warning_threshold = email_settings.warning_threshold_days
+    # Use the warning threshold from app settings
+    warning_threshold = settings.warning_threshold_days
+
+    # Log the warning threshold for debugging
+    logger.info(f"Retrieved warning threshold from app settings: {warning_threshold}")
 
     # Get WHOIS API key - first try organization-specific, then fall back to global
     whois_api_key = ''
@@ -5161,6 +5523,21 @@ def clear_ssl_cache(domain):
         return redirect(referrer)
     else:
         return redirect(url_for('ssl_certificates'))
+
+@app.route('/clear_all_ssl_cache')
+@auth.login_required
+def clear_all_ssl_cache():
+    """Clear SSL cache for all domains"""
+    try:
+        # Clear all SSL cache entries
+        db.clear_cache_by_prefix("ssl_")
+        logger.info("Cleared SSL cache for all domains")
+        flash('Successfully cleared SSL cache for all domains. Please refresh the domains to check their status.', 'success')
+    except Exception as e:
+        logger.error(f"Error clearing SSL cache: {str(e)}", exc_info=True)
+        flash(f'Failed to clear SSL cache: {str(e)}', 'error')
+
+    return redirect(url_for('ssl_certificates'))
 
 @app.route('/test_whois_api')
 @auth.login_required
@@ -6699,8 +7076,17 @@ def save_notifications():
             config['notifications']['email']['enabled'] = enabled
             if enabled:
                 config['notifications']['email']['smtp_server'] = request.form.get('smtp_server', '')
-                config['notifications']['email']['smtp_port'] = int(request.form.get('smtp_port', 587))
+
+                # Safely convert smtp_port to integer with a default value
+                try:
+                    smtp_port = request.form.get('smtp_port', '')
+                    config['notifications']['email']['smtp_port'] = int(smtp_port) if smtp_port.strip() else 587
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid smtp_port value: {request.form.get('smtp_port')}. Using default value of 587.")
+                    config['notifications']['email']['smtp_port'] = 587
+
                 config['notifications']['email']['smtp_username'] = request.form.get('smtp_username', '')
+                config['notifications']['email']['from_email'] = request.form.get('from_email', '')
 
                 # Only update password if provided
                 new_password = request.form.get('smtp_password', '')
@@ -6713,8 +7099,14 @@ def save_notifications():
                 app_settings = get_app_settings()
                 warning_threshold = app_settings.warning_threshold_days
 
-                # Set warning threshold from app settings
+                # Log the warning threshold for debugging
+                logger.info(f"Using warning threshold from app settings for email notifications: {warning_threshold}")
+
+                # Set warning threshold from app settings and save directly to database
                 config['notifications']['email']['warning_threshold_days'] = warning_threshold
+
+                # Save the updated notifications config to the database
+                db.set_setting('notifications', config['notifications'])
 
             flash('Email notification settings saved successfully', 'success')
 
@@ -6826,7 +7218,8 @@ def test_notification():
             flash(f"{notification_type.capitalize()} notifications are disabled", 'warning')
             return redirect(url_for('notifications'))
 
-        success, message = notifications.send_test_notification(notification_type, settings)
+        # Use the already imported notifications module
+        success, message = notifications_module.send_test_notification(notification_type, settings)
 
         if success:
             flash(f'Test notification sent successfully: {message}', 'success')
@@ -6836,6 +7229,249 @@ def test_notification():
         return redirect(url_for('notifications'))
 
     return redirect(url_for('notifications'))
+
+@app.route('/check_and_send_summary', methods=['POST'])
+@auth.login_required
+def manual_check_and_send_summary():
+    """Manually check all domains and send a summary email"""
+    try:
+        # Check if the user is an admin
+        current_user = auth.get_current_user()
+        if not current_user['is_admin']:
+            flash('Only administrators can manually trigger summary notifications', 'error')
+            return redirect(url_for('notifications'))
+
+        # Run the check and send the summary
+        success, message = check_all_domains_and_send_summary()
+
+        if success:
+            flash(f'Summary check completed: {message}', 'success')
+        else:
+            flash(f'Summary check failed: {message}', 'error')
+
+        return redirect(url_for('notifications'))
+    except Exception as e:
+        logger.error(f"Error in manual summary check: {str(e)}", exc_info=True)
+        flash(f'Error running summary check: {str(e)}', 'error')
+        return redirect(url_for('notifications'))
+
+def check_all_domains_and_send_summary():
+    """
+    Check all domains for SSL certificate, domain expiry, and ping status issues
+    and send a summary email notification with all warnings and errors
+    """
+    try:
+        logger.info("Checking all domains for issues and preparing summary...")
+        config = load_config()
+        notification_settings = get_notification_settings()
+
+        # Only proceed if email notifications are enabled
+        if not notification_settings.email.get('enabled', False):
+            logger.info("Email notifications are not enabled. Skipping summary check.")
+            return False, "Email notifications are not enabled"
+
+        # Initialize lists to store issues
+        ssl_issues = []
+        domain_expiry_issues = []
+        ping_issues = []
+
+        # Check SSL certificates
+        for entry in config.get('ssl_domains', []):
+            domain_name = entry.get('url')
+            if not domain_name:
+                continue
+
+            # Get the current certificate status
+            cert_status = check_certificate(domain_name)
+
+            # If the certificate is in warning or expired state, add to issues list
+            if cert_status.status in ['warning', 'expired']:
+                ssl_issues.append({
+                    'domain': domain_name,
+                    'status': cert_status.status,
+                    'days_remaining': cert_status.days_remaining,
+                    'expiry_date': cert_status.expiry_date.strftime('%Y-%m-%d')
+                })
+
+        # Check domain expiry
+        for entry in config.get('domain_expiry', []):
+            domain_name = entry.get('name')
+            if not domain_name:
+                continue
+
+            # Get the current domain expiry status
+            domain_status = check_domain_expiry(domain_name)
+
+            # If the domain is in warning or expired state, add to issues list
+            if domain_status.status in ['warning', 'expired']:
+                domain_expiry_issues.append({
+                    'domain': domain_name,
+                    'status': domain_status.status,
+                    'days_remaining': domain_status.days_remaining,
+                    'expiry_date': domain_status.expiry_date.strftime('%Y-%m-%d'),
+                    'registrar': domain_status.registrar
+                })
+
+        # Check ping status
+        for entry in config.get('ping_hosts', []):
+            domain_name = entry.get('host')
+            if not domain_name:
+                continue
+
+            # Get the current ping status
+            ping_result = check_ping(domain_name)
+
+            # If the ping status is down, add to issues list
+            if ping_result['status'] == 'down':
+                ping_issues.append({
+                    'domain': domain_name,
+                    'status': 'down',
+                    'last_checked': ping_result['last_checked'].strftime('%Y-%m-%d %H:%M:%S')
+                })
+
+        # If there are no issues, don't send a notification
+        if not ssl_issues and not domain_expiry_issues and not ping_issues:
+            logger.info("No issues found. Skipping summary notification.")
+            return True, "No issues found"
+
+        # Prepare the summary message
+        subject = f"Certifly Daily Summary - {datetime.now().strftime('%Y-%m-%d')}"
+
+        message = f"""
+Certifly Daily Monitoring Summary - {datetime.now().strftime('%Y-%m-%d')}
+
+This is an automated summary of all domain monitoring issues detected in your Certifly instance.
+
+"""
+
+        # Add SSL certificate issues to the message
+        if ssl_issues:
+            message += f"""
+SSL CERTIFICATE ISSUES ({len(ssl_issues)})
+----------------------------------------
+"""
+            for issue in ssl_issues:
+                message += f"""
+Domain: {issue['domain']}
+Status: {issue['status'].upper()}
+Days Remaining: {issue['days_remaining']}
+Expiry Date: {issue['expiry_date']}
+"""
+
+        # Add domain expiry issues to the message
+        if domain_expiry_issues:
+            message += f"""
+DOMAIN EXPIRY ISSUES ({len(domain_expiry_issues)})
+----------------------------------------
+"""
+            for issue in domain_expiry_issues:
+                message += f"""
+Domain: {issue['domain']}
+Status: {issue['status'].upper()}
+Days Remaining: {issue['days_remaining']}
+Expiry Date: {issue['expiry_date']}
+Registrar: {issue['registrar']}
+"""
+
+        # Add ping issues to the message
+        if ping_issues:
+            message += f"""
+PING MONITORING ISSUES ({len(ping_issues)})
+----------------------------------------
+"""
+            for issue in ping_issues:
+                message += f"""
+Domain: {issue['domain']}
+Status: {issue['status'].upper()}
+Last Checked: {issue['last_checked']}
+"""
+
+        # Add footer
+        message += f"""
+----------------------------------------
+This is an automated message from Certifly. Please do not reply to this email.
+"""
+
+        # Import the send_email_notification function from the notifications module
+        from notifications import send_email_notification
+
+        # Send the summary email
+        success, result_message = send_email_notification(notification_settings.email, subject, message)
+
+        if success:
+            logger.info("Summary notification email sent successfully")
+            # Log the notification
+            db.log_notification_sent("summary", "summary", "daily")
+            return True, "Summary notification email sent successfully"
+        else:
+            logger.error(f"Failed to send summary notification email: {result_message}")
+            return False, f"Failed to send summary notification email: {result_message}"
+
+    except Exception as e:
+        error_message = f"Error checking domains and sending summary: {str(e)}"
+        logger.error(error_message, exc_info=True)
+        return False, error_message
+
+def check_and_send_pending_notifications():
+    """Check for domains with warning or expired SSL certificates and send notifications if needed"""
+    try:
+        logger.info("Checking for pending notifications...")
+        config = load_config()
+        notification_settings = get_notification_settings()
+
+        # Only proceed if at least one notification channel is enabled
+        if not any([
+            notification_settings.email.get('enabled', False),
+            notification_settings.teams.get('enabled', False),
+            notification_settings.slack.get('enabled', False),
+            notification_settings.discord.get('enabled', False),
+            notification_settings.telegram.get('enabled', False),
+            notification_settings.webhook.get('enabled', False),
+            notification_settings.sms.get('enabled', False)
+        ]):
+            logger.info("No notification channels are enabled. Skipping notification check.")
+            return
+
+        # Check SSL certificates
+        for entry in config.get('ssl_domains', []):
+            domain_name = entry.get('url')
+            if not domain_name:
+                continue
+
+            # Get the current certificate status
+            cert_status = check_certificate(domain_name)
+
+            # If the certificate is in warning or expired state, check if we need to send a notification
+            if cert_status.status in ['warning', 'expired']:
+                should_notify = db.should_send_notification(domain_name, 'ssl', cert_status.status)
+
+                if should_notify:
+                    logger.info(f"Sending pending notification for {domain_name} SSL certificate ({cert_status.status})")
+                    notifications_sent = False
+
+                    # Send notifications to all enabled platforms
+                    if notification_settings.email.get('enabled', False):
+                        success, message = notifications_module.send_certificate_expiry_notification('email', notification_settings.email, cert_status)
+                        if success:
+                            notifications_sent = True
+                            logger.info(f"Email notification sent for {domain_name}: {message}")
+                        else:
+                            logger.error(f"Failed to send email notification for {domain_name}: {message}")
+
+                    # Add similar blocks for other notification channels as needed
+
+                    # Log the notification if any were sent successfully
+                    if notifications_sent:
+                        db.log_notification_sent(domain_name, 'ssl', cert_status.status)
+                        logger.info(f"Logged notification for {domain_name} SSL certificate ({cert_status.status})")
+                else:
+                    logger.debug(f"Skipping notification for {domain_name} SSL certificate ({cert_status.status}) - already sent recently")
+
+        logger.info("Finished checking for pending notifications")
+    except Exception as e:
+        logger.error(f"Error checking for pending notifications: {str(e)}", exc_info=True)
+
+
 
 @app.route('/check_ping/<domain>')
 def check_domain_ping(domain):
@@ -9518,11 +10154,71 @@ def add_test_ping_data(domain_name, num_entries=24):
 # Start the background task in a separate thread
 def start_background_tasks():
     """Start all background tasks in separate threads"""
+    # Start the ping check thread (currently disabled)
     ping_thread = threading.Thread(target=run_periodic_ping_checks, daemon=True)
     ping_thread.start()
+
+    # Start the notification checker thread
+    def notification_checker():
+        """Background thread to periodically check for and send notifications"""
+        # Wait 60 seconds after startup before first check
+        time.sleep(60)
+
+        # Track when the last daily summary was sent
+        last_summary_date = None
+
+        while True:
+            try:
+                # Check for pending notifications
+                check_and_send_pending_notifications()
+
+                # Check if we need to send a daily summary
+                current_datetime = datetime.now()
+                current_date = current_datetime.date()
+                current_hour = current_datetime.hour
+
+                # Send the summary at 8:00 AM (between 8:00 and 8:59)
+                summary_hour = 8
+
+                # Only send if it's a new day and we're in the right hour
+                if (last_summary_date is None or current_date > last_summary_date) and current_hour == summary_hour:
+                    try:
+                        logger.info(f"Running daily summary check at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}...")
+                        success, message = check_all_domains_and_send_summary()
+                        if success:
+                            last_summary_date = current_date
+                            logger.info(f"Daily summary check completed: {message}")
+                        else:
+                            logger.error(f"Daily summary check failed: {message}")
+                    except Exception as e:
+                        logger.error(f"Error in daily summary check: {str(e)}", exc_info=True)
+
+                # Sleep for 1 hour before checking again
+                time.sleep(3600)  # 3600 seconds = 1 hour
+            except Exception as e:
+                logger.error(f"Error in notification checker thread: {str(e)}", exc_info=True)
+                # Sleep for 5 minutes before trying again after an error
+                time.sleep(300)
+
+    notification_thread = threading.Thread(target=notification_checker, daemon=True)
+    notification_thread.start()
+
     logger.info("Background tasks started")
 
 if __name__ == '__main__':
+    # Create database tables if they don't exist
+    db.create_tables()
+
+    # Check if we need to create a default admin user
+    if not db.get_users():
+        # Create default admin user
+        default_username = os.getenv('DEFAULT_ADMIN_USERNAME', 'admin')
+        default_email = os.getenv('DEFAULT_ADMIN_EMAIL', 'admin@example.com')
+        default_password = os.getenv('DEFAULT_ADMIN_PASSWORD', 'admin')
+
+        db.create_user(default_username, default_email, default_password, is_admin=True)
+        logger.info(f"Created default admin user: {default_username}")
+
     # Start background tasks
     start_background_tasks()
 

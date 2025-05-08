@@ -1,0 +1,38 @@
+<!--
+  Uptime Chart Component Template
+  Include this in other templates using:
+  Example:
+  { % with domain_name=domain.name % }
+    { % include 'uptime-chart.html' % }
+  { % endwith % }
+  (Note: Remove spaces between { and % in actual usage)
+-->
+
+<div class="uptime-container">
+  <!-- Modern uptime chart -->
+  <div class="uptime-chart-modern" data-domain="{{ domain_name }}">
+    {% if domain.uptime_segments %}
+      {% for status in domain.uptime_segments %}
+        <div class="uptime-segment-modern uptime-{{ status }}-modern">
+          <span class="uptime-tooltip-modern">{{ status|capitalize }} - {{ 11 - loop.index0 }} hour{% if 11 - loop.index0 != 1 %}s{% endif %} ago</span>
+        </div>
+      {% endfor %}
+    {% else %}
+      {% for i in range(12) %}
+        <div class="uptime-segment-modern uptime-unknown-modern">
+          <span class="uptime-tooltip-modern">Unknown - {{ 11 - i }} hour{% if 11 - i != 1 %}s{% endif %} ago</span>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <!-- Uptime percentage -->
+  {% if domain.uptime_percentage is defined %}
+    <div class="uptime-percentage-modern
+      {% if domain.uptime_percentage >= 99 %}uptime-high-modern
+      {% elif domain.uptime_percentage >= 90 %}uptime-medium-modern
+      {% else %}uptime-low-modern{% endif %}">
+      {{ domain.uptime_percentage }}%
+    </div>
+  {% endif %}
+</div>

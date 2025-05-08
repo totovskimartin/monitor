@@ -25,20 +25,60 @@ def send_email_notification(settings, subject, message):
 
     try:
         msg = MIMEMultipart()
-        msg['From'] = settings['smtp_username']
+
+        # Use from_email if available, otherwise construct one from smtp_username
+        from_email = settings.get('from_email')
+        if not from_email:
+            # If smtp_username looks like an email, use it directly
+            if '@' in settings['smtp_username']:
+                from_email = settings['smtp_username']
+            else:
+                # Otherwise, try to construct an email using the SMTP server domain
+                smtp_domain = settings['smtp_server'].split('.')[-2:] if len(settings['smtp_server'].split('.')) >= 2 else ['example', 'com']
+                from_email = f"{settings['smtp_username']}@{'.'.join(smtp_domain)}"
+                logger.debug(f"Constructed from_email: {from_email}")
+
+        # Check if we're using SendGrid (common SMTP servers for SendGrid)
+        is_sendgrid = any(sg_domain in settings['smtp_server'].lower()
+                          for sg_domain in ['sendgrid', 'smtp.sendgrid.net'])
+
+        if is_sendgrid:
+            logger.info(f"SendGrid detected. Using verified sender: {from_email}")
+            # For SendGrid, the From address must be a verified sender
+            # Make sure the from_email is set to a verified sender in your SendGrid account
+
+        msg['From'] = from_email
         msg['To'] = settings['notification_email']
         msg['Subject'] = subject
         msg.attach(MIMEText(message, 'plain'))
 
-        server = smtplib.SMTP(settings['smtp_server'], int(settings['smtp_port']))
+        # Safely convert SMTP port to integer
+        try:
+            smtp_port = int(settings['smtp_port'])
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid smtp_port value: {settings['smtp_port']}. Using default value of 587.")
+            smtp_port = 587
+
+        logger.debug(f"Connecting to SMTP server: {settings['smtp_server']}:{smtp_port}")
+        server = smtplib.SMTP(settings['smtp_server'], smtp_port)
         server.starttls()
+        logger.debug(f"Logging in with username: {settings['smtp_username']}")
         server.login(settings['smtp_username'], settings['smtp_password'])
+        logger.debug(f"Sending email from {from_email} to {settings['notification_email']}")
         server.send_message(msg)
         server.quit()
 
         return True, "Email sent successfully"
     except Exception as e:
-        return False, f"Failed to send email: {str(e)}"
+        error_msg = str(e)
+        logger.error(f"Email notification error: {error_msg}")
+
+        # Provide more helpful error message for SendGrid sender identity issues
+        if "550" in error_msg and "sender identity" in error_msg.lower():
+            return False, (f"Failed to send email: The From address '{from_email}' is not verified with SendGrid. "
+                          f"Please verify this sender in your SendGrid account or use a different verified email address.")
+
+        return False, f"Failed to send email: {error_msg}"
 
 def send_teams_notification(settings, title, message):
     """Send a notification to Microsoft Teams using webhook"""

@@ -1,0 +1,144 @@
+/*
+ * Modern Uptime Chart - Dashboard Implementation
+ * A clean, reliable visualization of domain uptime
+ */
+
+/* Main container for the uptime chart */
+.uptime-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  position: relative;
+}
+
+/* The actual chart with segments */
+.uptime-chart-modern {
+  display: flex;
+  height: 20px;
+  width: 160px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+[data-bs-theme="dark"] .uptime-chart-modern {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Time labels below the chart */
+.uptime-time-labels {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 2px;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Individual uptime segments */
+.uptime-segment-modern {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  transition: transform 0.15s ease;
+}
+
+/* Status colors */
+.uptime-up-modern {
+  background-color: #4caf50; /* Green */
+}
+
+.uptime-down-modern {
+  background-color: #f44336; /* Red */
+}
+
+.uptime-unknown-modern {
+  background-color: #e0e0e0; /* Light gray */
+}
+
+[data-bs-theme="dark"] .uptime-unknown-modern {
+  background-color: #424242; /* Darker gray for dark theme */
+}
+
+/* Hover effects */
+.uptime-segment-modern:hover {
+  transform: scaleY(1.1);
+  z-index: 5;
+}
+
+/* Tooltip for segments */
+.uptime-tooltip-modern {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+  padding: 4px 8px;
+  background-color: var(--card-bg, #fff);
+  color: var(--text-color, #333);
+  font-size: 0.7rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 10;
+  border: 1px solid var(--border-color, #ddd);
+}
+
+.uptime-segment-modern:hover .uptime-tooltip-modern {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Uptime percentage display */
+.uptime-percentage-modern {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  min-width: 40px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.uptime-high-modern {
+  color: #2e7d32; /* Dark green */
+  background-color: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.15);
+}
+
+.uptime-medium-modern {
+  color: #ef6c00; /* Dark orange */
+  background-color: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.15);
+}
+
+.uptime-low-modern {
+  color: #c62828; /* Dark red */
+  background-color: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .uptime-chart-modern {
+    height: 16px;
+  }
+
+  .uptime-percentage-modern {
+    font-size: 0.7rem;
+    padding: 1px 4px;
+  }
+}

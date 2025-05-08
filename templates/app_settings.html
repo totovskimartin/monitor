@@ -25,7 +25,8 @@
                                 <label for="warning_threshold" class="form-label">Warning Threshold (days)</label>
                                 <input type="number" class="form-control" id="warning_threshold" name="warning_threshold"
                                        value="{{ settings.warning_threshold_days }}" min="1" max="90" required>
-                                <div class="form-text">Certificates and domains expiring within this many days will be marked with a warning status.</div>
+                                <div class="form-text">Certificates and domains expiring within this many days will be marked with a warning status.
+                                When you save settings, all statuses will be updated with the new threshold.</div>
                             </div>
                         </div>
                     </div>

@@ -5,14 +5,14 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Foreign
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from contextlib import contextmanager
 
-# Database configuration
+# Database configuration - PostgreSQL only
 DB_USER = os.getenv('DB_USER', 'certifly')
 DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
 DB_HOST = os.getenv('DB_HOST', 'localhost')
 DB_PORT = os.getenv('DB_PORT', '5432')
 DB_NAME = os.getenv('DB_NAME', 'certifly')
-
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+print(f"Using PostgreSQL database at: {DB_HOST}:{DB_PORT}/{DB_NAME}")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -234,6 +234,22 @@ class UserPreference(Base):
     # Relationships
     user = relationship("User", back_populates="preferences")
 
+class NotificationLog(Base):
+    __tablename__ = "notification_logs"
+
+    id = Column(Integer, primary_key=True)
+    domain_name = Column(String, nullable=False)
+    notification_type = Column(String, nullable=False)  # 'ssl', 'domain', 'ping'
+    status = Column(String, nullable=False)  # 'warning', 'expired', 'error'
+    last_sent_at = Column(DateTime, default=datetime.utcnow)
+
+    # Create a unique constraint on domain_name and notification_type
+    __table_args__ = (
+        UniqueConstraint('domain_name', 'notification_type', name='uix_notification_log'),
+    )
+
+
+
 # Session management functions
 def create_session(user_id, session_token, expires_at):
     """Create a new session in the database"""
@@ -355,6 +371,12 @@ def get_all_users():
             }
             for user in users
         ]
+
+def get_users():
+    """Get all users (returns True if any users exist, False otherwise)"""
+    with get_db() as db:
+        count = db.query(User).count()
+        return count > 0
 
 def get_users_by_partial_username(partial_username):
     """Get users by partial username match"""
@@ -920,6 +942,80 @@ def add_alert_history(alert_id, domain_name, alert_type, status, message, action
         )
         db.add(alert_history)
         db.commit()
+        return True
+
+# Notification tracking functions
+def log_notification_sent(domain_name, notification_type, status):
+    """Record that a notification was sent for a domain"""
+    try:
+        with get_db() as db:
+            # Check if there's an existing log for this domain and notification type
+            notification_log = db.query(NotificationLog).filter(
+                NotificationLog.domain_name == domain_name,
+                NotificationLog.notification_type == notification_type
+            ).first()
+
+            if notification_log:
+                # Update the existing log
+                notification_log.status = status
+                notification_log.last_sent_at = datetime.utcnow()
+            else:
+                # Create a new log
+                notification_log = NotificationLog(
+                    domain_name=domain_name,
+                    notification_type=notification_type,
+                    status=status
+                )
+                db.add(notification_log)
+
+            db.commit()
+            return True
+    except Exception as e:
+        print(f"Error logging notification: {str(e)}")
+        return False
+
+def get_last_notification(domain_name, notification_type):
+    """Get the last notification sent for a domain"""
+    try:
+        with get_db() as db:
+            notification_log = db.query(NotificationLog).filter(
+                NotificationLog.domain_name == domain_name,
+                NotificationLog.notification_type == notification_type
+            ).first()
+
+            if notification_log:
+                return {
+                    'status': notification_log.status,
+                    'last_sent_at': notification_log.last_sent_at
+                }
+            return None
+    except Exception as e:
+        print(f"Error getting notification log: {str(e)}")
+        return None
+
+def should_send_notification(domain_name, notification_type, status, min_hours_between=24):
+    """Check if a notification should be sent based on the last notification time and status"""
+    try:
+        last_notification = get_last_notification(domain_name, notification_type)
+
+        # If no previous notification, we should send one
+        if not last_notification:
+            return True
+
+        # If status has changed, we should send a notification
+        if last_notification['status'] != status:
+            return True
+
+        # If it's been more than min_hours_between since the last notification, send another
+        hours_since_last = (datetime.utcnow() - last_notification['last_sent_at']).total_seconds() / 3600
+        if hours_since_last >= min_hours_between:
+            return True
+
+        # Otherwise, don't send a notification
+        return False
+    except Exception as e:
+        print(f"Error checking if notification should be sent: {str(e)}")
+        # If there's an error, default to sending the notification
         return True
 
 # User action logging functions
@@ -1546,19 +1642,60 @@ def record_ping_status(domain_name, status, response_time):
         db.commit()
         return True
 
+def get_ping_status(domain_name, force_refresh=False):
+    """
+    Get the current ping status for a domain
+
+    Args:
+        domain_name: Domain name
+        force_refresh: Whether to force a refresh of the ping status
+
+    Returns:
+        PingStatus object with the current status
+    """
+    # Import here to avoid circular imports
+    from app import check_ping, PingStatus
+
+    if force_refresh:
+        # Clear cache and perform a new check
+        clear_cache(f"ping_{domain_name}")
+        ping_result = check_ping(domain_name)
+    else:
+        # Use cached data if available
+        ping_result = check_ping(domain_name)
+
+    # Create and return a PingStatus object
+    return PingStatus(
+        host=domain_name,
+        status=ping_result.get("status", "unknown"),
+        last_checked=ping_result.get("last_checked"),
+        response_time=ping_result.get("response_time", 0.0)
+    )
+
+
 # Initialize database
 def init_db():
     """Initialize the database by creating all tables"""
     Base.metadata.create_all(bind=engine)
 
+def create_tables():
+    """Create all database tables if they don't exist (alias for init_db)"""
+    import logging
+    logger = logging.getLogger('certifly')
+    logger.info("Creating database tables if they don't exist")
+    init_db()
+    logger.info("Database tables created successfully")
+    return True
+
 def check_connection():
     """Check if database connection is working"""
     try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        conn.close()
-        return True
+        with get_db() as db:
+            # Just try to execute a simple query
+            db.execute("SELECT 1")
+            return True
     except Exception as e:
+        import logging
+        logger = logging.getLogger('certifly')
         logger.error(f"Database connection check failed: {str(e)}")
         return False

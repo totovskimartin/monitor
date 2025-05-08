@@ -1,0 +1,179 @@
+/* 
+ * Modern Uptime Chart - New Implementation
+ * A clean, reliable visualization of domain uptime
+ */
+
+.uptime-visualization {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Main chart container */
+.uptime-chart-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 180px;
+  position: relative;
+}
+
+/* The actual chart with segments */
+.uptime-chart-new {
+  display: flex;
+  height: 24px;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+[data-bs-theme="dark"] .uptime-chart-new {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Time period labels */
+.uptime-time-axis {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 2px;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Individual time labels */
+.uptime-time-label {
+  line-height: 1;
+}
+
+/* Individual uptime segments */
+.uptime-bar {
+  flex: 1;
+  height: 100%;
+  margin: 0 1px;
+  position: relative;
+  transition: transform 0.15s ease;
+}
+
+/* Status colors */
+.uptime-status-up {
+  background-color: var(--success);
+}
+
+.uptime-status-down {
+  background-color: var(--danger);
+}
+
+.uptime-status-unknown {
+  background-color: var(--neutral);
+}
+
+.uptime-status-pending {
+  background-color: var(--neutral);
+  background-image: linear-gradient(45deg, 
+    rgba(255, 255, 255, 0.1) 25%, 
+    transparent 25%, 
+    transparent 50%, 
+    rgba(255, 255, 255, 0.1) 50%, 
+    rgba(255, 255, 255, 0.1) 75%, 
+    transparent 75%, 
+    transparent);
+  background-size: 8px 8px;
+  animation: uptime-pending-animation 1s linear infinite;
+}
+
+@keyframes uptime-pending-animation {
+  0% { background-position: 0 0; }
+  100% { background-position: 8px 8px; }
+}
+
+/* Hover effects */
+.uptime-bar:hover {
+  transform: scaleY(1.05);
+  z-index: 5;
+}
+
+/* Tooltip for segments */
+.uptime-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+  padding: 4px 8px;
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  font-size: 0.7rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 10;
+  border: 1px solid var(--border-color);
+}
+
+.uptime-bar:hover .uptime-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Uptime percentage display */
+.uptime-percentage-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  min-width: 50px;
+  text-align: center;
+}
+
+.uptime-percentage-high {
+  color: var(--success);
+  background-color: rgba(var(--success-rgb), 0.1);
+  border: 1px solid rgba(var(--success-rgb), 0.15);
+}
+
+.uptime-percentage-medium {
+  color: var(--warning);
+  background-color: rgba(var(--warning-rgb), 0.1);
+  border: 1px solid rgba(var(--warning-rgb), 0.15);
+}
+
+.uptime-percentage-low {
+  color: var(--danger);
+  background-color: rgba(var(--danger-rgb), 0.1);
+  border: 1px solid rgba(var(--danger-rgb), 0.15);
+}
+
+/* New domain indicator */
+.uptime-new-domain {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background-color: var(--primary);
+  color: white;
+  font-size: 0.6rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  z-index: 5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .uptime-chart-container {
+    max-width: 150px;
+  }
+}

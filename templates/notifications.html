@@ -37,6 +37,30 @@
                     The warning threshold for certificate and domain expiry notifications is configured in the <a href="{{ url_for('app_settings') }}">General Settings</a> page.
                 </div>
 
+                <!-- Daily Summary Section -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="bi bi-envelope-check me-2"></i>
+                            Daily Summary Email
+                        </h5>
+                        <p class="card-text">
+                            The system automatically sends a daily summary email at 8:00 AM with all domain warnings and errors if email notifications are enabled.
+                            You can also manually trigger a summary check and email using the button below.
+                        </p>
+                        <form action="{{ url_for('manual_check_and_send_summary') }}" method="POST">
+                            <button type="submit" class="btn btn-primary" {% if not notifications.email.enabled %}disabled{% endif %}>
+                                <i class="bi bi-envelope-paper me-1"></i> Send Summary Email Now
+                            </button>
+                            {% if not notifications.email.enabled %}
+                            <div class="text-muted mt-2">
+                                <small><i class="bi bi-info-circle me-1"></i> Email notifications must be enabled to send summary emails.</small>
+                            </div>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+
                 <!-- Notification Channels Accordion -->
                 <div class="accordion" id="notificationAccordion" data-bs-parent="">
                     <!-- Email Notifications -->
@@ -103,12 +127,27 @@
                                         </div>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label for="notification_email" class="form-label">Recipient Email</label>
-                                        <input type="email" class="form-control" id="notification_email" name="notification_email"
-                                               value="{{ notifications.email.notification_email }}"
-                                               placeholder="recipient@example.com"
-                                               {% if not notifications.email.enabled %}disabled{% endif %}>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="from_email" class="form-label">From Email Address</label>
+                                            <input type="email" class="form-control" id="from_email" name="from_email"
+                                                   value="{{ notifications.email.from_email }}"
+                                                   placeholder="sender@example.com"
+                                                   {% if not notifications.email.enabled %}disabled{% endif %}>
+                                            <div class="form-text">
+                                                The email address that will appear in the "From" field. If left blank, it will be constructed from the SMTP username.
+                                                <strong>Note for SendGrid users:</strong> This must be a verified sender in your SendGrid account.
+                                                <a href="https://sendgrid.com/docs/for-developers/sending-email/sender-identity/" target="_blank">Learn more</a>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-md-6 mb-3">
+                                            <label for="notification_email" class="form-label">Recipient Email</label>
+                                            <input type="email" class="form-control" id="notification_email" name="notification_email"
+                                                   value="{{ notifications.email.notification_email }}"
+                                                   placeholder="recipient@example.com"
+                                                   {% if not notifications.email.enabled %}disabled{% endif %}>
+                                        </div>
                                     </div>
 
                                     <div class="d-flex gap-2">

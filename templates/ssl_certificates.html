@@ -15,9 +15,12 @@
                 <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addDomainModal">
                     <i class="bi bi-plus-lg"></i> Add Domain
                 </button>
-                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addBulkDomainsModal">
+                <button class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#addBulkDomainsModal">
                     <i class="bi bi-file-earmark-plus"></i> Add Multiple Domains
                 </button>
+                <a href="{{ url_for('clear_all_ssl_cache') }}" class="btn btn-outline-secondary" onclick="return confirm('Are you sure you want to clear the SSL cache for all domains? This will force a fresh check of all certificates.')">
+                    <i class="bi bi-x-circle"></i> Clear All SSL Caches
+                </a>
             </div>
         </div>
     </div>

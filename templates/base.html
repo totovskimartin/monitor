@@ -43,6 +43,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/domain-details.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/spacing.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/timezone-selector.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/uptime-chart-modern.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {% block head_extra %}{% endblock %}
     {% block head %}{% endblock %}
@@ -380,6 +381,7 @@
 
     {% if request.endpoint == 'index' %}
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/uptime-chart-modern.js') }}"></script>
     {% endif %}
 
     {% if request.endpoint in ['reports', 'generate_report', 'export_report'] %}
