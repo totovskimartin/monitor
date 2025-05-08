@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/profile_picture.html' import render_profile_picture %}
 
 {% block title %}Users - Certifly{% endblock %}
 
@@ -22,7 +23,6 @@
         color: var(--bs-secondary-color);
     }
     .action-btn:hover {
-        transform: translateY(-2px);
         box-shadow: 0 3px 5px rgba(0,0,0,0.2);
     }
     .action-btn i {
@@ -56,7 +56,6 @@
     }
     .add-user-btn:hover {
         background-color: #3a56d4;
-        transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(67, 97, 238, 0.4);
         color: white;
     }
@@ -163,6 +162,17 @@
                     Showing all users
                 </div>
                 <div class="d-flex gap-2">
+                    <div class="dropdown bulk-actions-dropdown me-2" id="bulkActionsDropdown" style="display: none;">
+                        <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-gear"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item bulk-action" href="#" data-action="activate"><i class="bi bi-check-circle me-2"></i>Activate Selected</a></li>
+                            <li><a class="dropdown-item bulk-action" href="#" data-action="deactivate"><i class="bi bi-x-circle me-2"></i>Deactivate Selected</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item bulk-action text-danger" href="#" data-action="delete"><i class="bi bi-trash me-2"></i>Delete Selected</a></li>
+                        </ul>
+                    </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="clearFiltersBtn">
                         <i class="bi bi-x-circle me-1"></i>Clear Filters
                     </button>
@@ -172,6 +182,11 @@
                 <table class="table table-hover modern-table">
                     <thead>
                         <tr>
+                            <th style="width: 40px;">
+                                <div class="form-check">
+                                    <input class="form-check-input select-all-checkbox" type="checkbox" id="selectAllUsers">
+                                </div>
+                            </th>
                             <th>
                                 <a href="{{ url_for('user_admin', sort='username', order='asc' if sort_by != 'username' or sort_order == 'desc' else 'desc') }}" class="text-decoration-none text-reset d-flex align-items-center">
                                     Username
@@ -220,7 +235,19 @@
                     <tbody>
                         {% for user_item in users %}
                         <tr>
-                            <td>{{ user_item.username }}</td>
+                            <td>
+                                <div class="form-check">
+                                    <input class="form-check-input user-checkbox" type="checkbox" value="{{ user_item.id }}" data-user-id="{{ user_item.id }}" data-username="{{ user_item.username }}" {% if user and user.id == user_item.id %}disabled{% endif %}>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">
+                                        {{ render_profile_picture(user_item.profile_image, 32, 18) }}
+                                    </span>
+                                    {{ user_item.username }}
+                                </div>
+                            </td>
                             <td>{{ user_item.email }}</td>
                             <td>
                                 {% if user_item.is_admin %}
@@ -464,6 +491,128 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Bulk Operations Functionality
+        const selectAllCheckbox = document.getElementById('selectAllUsers');
+        const userCheckboxes = document.querySelectorAll('.user-checkbox:not([disabled])');
+        const bulkActionsDropdown = document.getElementById('bulkActionsDropdown');
+        const bulkActions = document.querySelectorAll('.bulk-action');
+
+        // Function to toggle bulk actions dropdown visibility
+        function updateBulkActionsVisibility() {
+            const checkedBoxes = document.querySelectorAll('.user-checkbox:checked');
+            bulkActionsDropdown.style.display = checkedBoxes.length > 0 ? 'block' : 'none';
+        }
+
+        // Select all checkbox functionality
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                userCheckboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+                updateBulkActionsVisibility();
+            });
+        }
+
+        // Individual checkbox functionality
+        userCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // Update "select all" checkbox state
+                if (!this.checked) {
+                    selectAllCheckbox.checked = false;
+                } else {
+                    // Check if all checkboxes are checked
+                    const allChecked = Array.from(userCheckboxes).every(cb => cb.checked);
+                    selectAllCheckbox.checked = allChecked;
+                }
+                updateBulkActionsVisibility();
+            });
+        });
+
+        // Bulk actions functionality
+        bulkActions.forEach(action => {
+            action.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                const actionType = this.getAttribute('data-action');
+                const selectedUsers = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => ({
+                    id: cb.value,
+                    username: cb.getAttribute('data-username')
+                }));
+
+                if (selectedUsers.length === 0) {
+                    alert('Please select at least one user.');
+                    return;
+                }
+
+                const usernames = selectedUsers.map(user => user.username).join(', ');
+
+                switch (actionType) {
+                    case 'activate':
+                        if (confirm(`Are you sure you want to activate ${selectedUsers.length} selected user(s)?\n\nUsers: ${usernames}`)) {
+                            // Create a form to submit the selected users
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_activate_users';
+
+                            // Add selected users as hidden inputs
+                            selectedUsers.forEach(user => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'user_ids';
+                                input.value = user.id;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+
+                    case 'deactivate':
+                        if (confirm(`Are you sure you want to deactivate ${selectedUsers.length} selected user(s)?\n\nUsers: ${usernames}`)) {
+                            // Create a form to submit the selected users
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_deactivate_users';
+
+                            // Add selected users as hidden inputs
+                            selectedUsers.forEach(user => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'user_ids';
+                                input.value = user.id;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+
+                    case 'delete':
+                        if (confirm(`Are you sure you want to delete ${selectedUsers.length} selected user(s)? This action cannot be undone.\n\nUsers: ${usernames}`)) {
+                            // Create a form to submit the selected users
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_delete_users';
+
+                            // Add selected users as hidden inputs
+                            selectedUsers.forEach(user => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'user_ids';
+                                input.value = user.id;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+                }
+            });
+        });
+
         // Edit User Modal
         const editUserModal = document.getElementById('editUserModal');
         if (editUserModal) {

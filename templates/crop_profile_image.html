@@ -1,0 +1,299 @@
+{% extends 'base.html' %}
+
+{% block title %}Crop Profile Image{% endblock %}
+
+{% block head %}
+<!-- Primary CDN CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css?v={{ now }}" id="cropper-cdn-css">
+<!-- Local fallback CSS -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/cropper.min.css') }}?v={{ now }}" id="cropper-local-css">
+<style>
+    .img-container {
+        max-height: 500px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .cropper-container {
+        max-width: 100%;
+    }
+    .preview {
+        width: 150px;
+        height: 150px;
+        overflow: hidden;
+        border-radius: 50%;
+        margin: 0 auto;
+        border: 3px solid var(--border-color);
+    }
+    .preview img {
+        display: block;
+        width: 100%;
+        min-width: 100%;
+        min-height: 100%;
+        max-width: none;
+        max-height: none;
+    }
+    .cropper-view-box,
+    .cropper-face {
+        border-radius: 50%;
+    }
+    /* Fix for cropper.js in dark mode */
+    .cropper-modal {
+        background-color: rgba(0, 0, 0, 0.7);
+    }
+    .cropper-bg {
+        background-image: none !important;
+    }
+    .cropper-line, .cropper-point {
+        background-color: #fff;
+    }
+    /* Make sure the image is visible */
+    #image {
+        max-width: 100%;
+        display: block;
+    }
+    /* Debug info */
+    #debug-info {
+        margin-top: 20px;
+        padding: 10px;
+        background-color: rgba(0,0,0,0.05);
+        border-radius: 5px;
+        font-family: monospace;
+        font-size: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="modern-card">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-crop"></i>
+                        Crop Profile Image
+                    </h2>
+                </div>
+                <div class="modern-card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="img-container">
+                                <img id="image" src="{{ url_for('static', filename='temp/' + temp_filename) }}?v={{ now }}" class="img-fluid"
+                                     onload="console.log('Image loaded successfully'); document.getElementById('image-status').textContent = 'Image loaded successfully';"
+                                     onerror="console.error('Error loading image'); document.getElementById('image-status').textContent = 'Error loading image'; document.getElementById('image-status').style.color = 'red';">
+                            </div>
+                            <div class="mt-3 mb-3">
+                                <p class="text-muted">
+                                    <small>Drag to position and resize the crop area. The preview shows how your profile image will appear.</small>
+                                </p>
+                                <p id="image-status" class="small text-info">Waiting for image to load...</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="preview-container">
+                                <h4 class="mb-3">Preview</h4>
+                                <div class="preview mb-4"></div>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-primary" id="crop-btn">
+                                        <i class="bi bi-check-lg"></i> Apply Crop
+                                    </button>
+                                    <a href="{{ url_for('profile') }}" class="btn btn-outline-secondary">
+                                        <i class="bi bi-x-lg"></i> Cancel
+                                    </a>
+                                    <button type="button" class="btn btn-outline-info mt-3" id="init-cropper-btn" onclick="initCropper()">
+                                        <i class="bi bi-arrow-repeat"></i> Reinitialize Cropper
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="cropForm" method="POST" action="{{ url_for('save_cropped_image') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="temp_filename" value="{{ temp_filename }}">
+                        <input type="hidden" name="crop_data" id="crop_data">
+                    </form>
+
+                    <!-- Debug information section hidden in production -->
+                    <div id="debug-info" class="mt-4 d-none">
+                        <strong>Debug Information:</strong><br>
+                        <span>Waiting for events...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Load Cropper.js from CDN with local fallback -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+<script>
+    // Fallback to local version if CDN fails
+    if (typeof Cropper === 'undefined') {
+        console.log('Loading local Cropper.js fallback');
+        document.write('<script src="{{ url_for("static", filename="js/cropper.min.js") }}?v={{ now }}"><\/script>');
+    }
+</script>
+
+<script>
+    // Global variables
+    let cropperInstance = null;
+
+    // Function to update debug info (only used during development)
+    function updateDebugInfo(message) {
+        // Debug info is hidden in production, but we keep the function for development
+        var debugInfo = document.getElementById('debug-info');
+        if (debugInfo && !debugInfo.classList.contains('d-none')) {
+            var timestamp = new Date().toLocaleTimeString();
+            debugInfo.innerHTML += timestamp + ': ' + message + '<br>';
+        }
+    }
+
+    // Define initCropper globally so it can be called from anywhere
+    function initCropper() {
+        updateDebugInfo('Initializing Cropper.js');
+        console.log('Initializing Cropper.js');
+
+        const image = document.getElementById('image');
+        const cropBtn = document.getElementById('crop-btn');
+        const cropForm = document.getElementById('cropForm');
+        const cropDataInput = document.getElementById('crop_data');
+
+        if (!image) {
+            console.error('Image element not found');
+            updateDebugInfo('ERROR: Image element not found');
+            return;
+        }
+
+        try {
+            // Check if Cropper is defined
+            if (typeof Cropper === 'undefined') {
+                console.error('Cropper is not defined');
+                updateDebugInfo('ERROR: Cropper is not defined');
+                return;
+            }
+
+            // Destroy previous instance if it exists
+            if (cropperInstance) {
+                console.log('Destroying previous cropper instance');
+                updateDebugInfo('Destroying previous cropper instance');
+                cropperInstance.destroy();
+            }
+
+            // Create new cropper instance
+            updateDebugInfo('Creating new Cropper instance');
+            cropperInstance = new Cropper(image, {
+                aspectRatio: 1,
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 1,
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: false,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleDragModeOnDblclick: false,
+                preview: '.preview',
+                ready: function() {
+                    console.log('Cropper is ready');
+                    updateDebugInfo('Cropper is ready');
+                }
+            });
+
+            // Add click event listener to crop button if it exists
+            if (cropBtn) {
+                // Remove any existing event listeners
+                cropBtn.replaceWith(cropBtn.cloneNode(true));
+
+                // Get the new button reference
+                const newCropBtn = document.getElementById('crop-btn');
+
+                // Add event listener to the new button
+                newCropBtn.addEventListener('click', function() {
+                    console.log('Crop button clicked');
+                    updateDebugInfo('Crop button clicked');
+                    try {
+                        // Get the cropped canvas data
+                        const canvas = cropperInstance.getCroppedCanvas({
+                            width: 300,
+                            height: 300,
+                            fillColor: '#fff',
+                            imageSmoothingEnabled: true,
+                            imageSmoothingQuality: 'high',
+                        });
+
+                        if (!canvas) {
+                            console.error('Failed to create canvas');
+                            updateDebugInfo('ERROR: Failed to create canvas');
+                            return;
+                        }
+
+                        // Convert canvas to base64 string
+                        const imageData = canvas.toDataURL('image/jpeg');
+
+                        // Set the crop data in the form
+                        cropDataInput.value = imageData;
+
+                        // Submit the form
+                        console.log('Submitting form');
+                        updateDebugInfo('Submitting form');
+                        cropForm.submit();
+                    } catch (error) {
+                        console.error('Error during crop operation:', error);
+                        updateDebugInfo('ERROR during crop operation: ' + error.message);
+                    }
+                });
+            } else {
+                console.error('Crop button not found');
+                updateDebugInfo('ERROR: Crop button not found');
+            }
+        } catch (error) {
+            console.error('Error initializing Cropper:', error);
+            updateDebugInfo('ERROR initializing Cropper: ' + error.message);
+        }
+    }
+
+    // Initialize on DOM content loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM content loaded');
+        updateDebugInfo('DOM content loaded');
+
+        const image = document.getElementById('image');
+
+        if (!image) {
+            console.error('Image element not found on DOMContentLoaded');
+            updateDebugInfo('ERROR: Image element not found on DOMContentLoaded');
+            return;
+        }
+
+        // Check if Cropper is already defined
+        if (typeof Cropper !== 'undefined') {
+            // Make sure the image is loaded before initializing Cropper
+            if (image.complete) {
+                initCropper();
+            } else {
+                image.onload = initCropper;
+            }
+        } else {
+            console.error('Cropper not defined');
+            updateDebugInfo('ERROR: Cropper not defined');
+        }
+    });
+
+    // Add a manual initialization button event listener
+    window.addEventListener('load', function() {
+        const initBtn = document.getElementById('init-cropper-btn');
+        if (initBtn) {
+            initBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Manual initialization requested');
+                updateDebugInfo('Manual initialization requested');
+                initCropper();
+            });
+        }
+    });
+</script>
+{% endblock %}

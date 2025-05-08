@@ -115,12 +115,20 @@
     height: 30px;
     border-radius: var(--radius);
     overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.03);
+    padding: 3px;
+}
+
+[data-bs-theme="dark"] .uptime-chart-detailed {
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
 .uptime-chart-detailed .uptime-segment {
     flex: 1;
     height: 100%;
     transition: transform 0.2s;
+    margin: 0 1px;
+    border-radius: 4px;
 }
 
 .uptime-chart-detailed .uptime-segment:hover {

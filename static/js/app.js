@@ -131,6 +131,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeThemeToggle();
     initializeAutoRefresh();
     initializeModals();
+    fixModalBackdropIssues();
 
     // Copy to clipboard functionality
     window.copyToClipboard = async function(text) {
@@ -185,15 +186,14 @@ function initializeThemeToggle() {
 
     const themeIcon = themeToggle.querySelector('i');
 
-    // Set initial theme based on localStorage or system preference
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initialTheme = savedTheme || (prefersDarkMode ? 'dark' : 'light');
+    // Get current theme from HTML attribute (already set in base.html)
+    const currentTheme = document.documentElement.getAttribute('data-bs-theme');
 
-    // Apply initial theme
-    document.documentElement.setAttribute('data-bs-theme', initialTheme);
-    if (initialTheme === 'dark' && themeIcon) {
-        themeIcon.classList.replace('bi-moon', 'bi-sun');
+    // Update icon based on current theme
+    if (currentTheme === 'dark' && themeIcon) {
+        themeIcon.className = 'bi bi-sun';
+    } else if (currentTheme === 'light' && themeIcon) {
+        themeIcon.className = 'bi bi-moon';
     }
 
     // Theme toggle click handler
@@ -201,15 +201,92 @@ function initializeThemeToggle() {
         const currentTheme = document.documentElement.getAttribute('data-bs-theme');
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
+        // Apply theme immediately
         document.documentElement.setAttribute('data-bs-theme', newTheme);
+
+        // Store in localStorage
         localStorage.setItem('theme', newTheme);
+        console.log('Theme toggled to: ' + newTheme);
 
         // Update icon
         if (themeIcon) {
-            themeIcon.classList.replace(
-                newTheme === 'dark' ? 'bi-moon' : 'bi-sun',
-                newTheme === 'dark' ? 'bi-sun' : 'bi-moon'
-            );
+            if (newTheme === 'dark') {
+                themeIcon.className = 'bi bi-sun';
+            } else {
+                themeIcon.className = 'bi bi-moon';
+            }
+        }
+    });
+}
+
+// Theme preference is now handled entirely by localStorage
+
+// Fix modal backdrop issues globally
+function fixModalBackdropIssues() {
+    // Get all modals on the page
+    const modals = document.querySelectorAll('.modal');
+
+    // Add event listeners to each modal
+    modals.forEach(modal => {
+        // Check if we've already added our listener
+        if (!modal.dataset.backdropFixed) {
+            // Add hidden.bs.modal event listener
+            modal.addEventListener('hidden.bs.modal', function() {
+                console.log('Modal hidden event triggered for', modal.id);
+
+                // Force remove all modal backdrops
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    console.log('Removing backdrop');
+                    backdrop.remove();
+                });
+
+                // Force remove modal-open class and inline styles from body
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+
+                // Mark this modal as fixed
+                modal.dataset.backdropFixed = 'true';
+            });
+
+            // Also handle the case where the modal is closed by clicking outside
+            modal.addEventListener('click', function(event) {
+                // Check if the click was on the modal backdrop (outside the modal content)
+                if (event.target === modal) {
+                    console.log('Click outside modal detected');
+
+                    // Force close the modal properly
+                    const modalInstance = bootstrap.Modal.getInstance(modal);
+                    if (modalInstance) {
+                        modalInstance.hide();
+                    }
+                }
+            });
+        }
+    });
+
+    // Add a global click handler for close buttons
+    document.addEventListener('click', function(event) {
+        // Check if the clicked element is a modal close button
+        if (event.target.matches('[data-bs-dismiss="modal"]') ||
+            event.target.closest('[data-bs-dismiss="modal"]')) {
+
+            console.log('Modal close button clicked');
+
+            // Force remove all modal backdrops after a short delay
+            setTimeout(() => {
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    console.log('Removing backdrop after close button click');
+                    backdrop.remove();
+                });
+
+                // Force remove modal-open class and inline styles from body
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            }, 300); // Short delay to allow Bootstrap's own handlers to run first
         }
     });
 }
@@ -218,18 +295,45 @@ function initializeThemeToggle() {
 function initializeAutoRefresh() {
     const refreshIndicator = document.getElementById('refresh-indicator');
     const refreshTimeDisplay = document.getElementById('refresh-time-display');
-    const refreshOptionBtns = document.querySelectorAll('.refresh-option-btn');
+    const autoRefreshBtn = document.getElementById('autoRefreshBtn');
+    const autoRefreshDropdown = document.getElementById('autoRefreshDropdown');
+    const refreshOptionBtns = document.querySelectorAll('.auto-refresh-option');
 
-    if (!refreshOptionBtns.length || !refreshIndicator || !refreshTimeDisplay) return;
+    if (!refreshOptionBtns.length || !refreshIndicator || !refreshTimeDisplay || !autoRefreshBtn || !autoRefreshDropdown) return;
 
     let refreshInterval;
     let countdownInterval;
+    let dropdownVisible = false;
 
     // Format time helper function
     const formatTime = (secs) => {
         const minutes = Math.floor(secs / 60);
         const seconds = secs % 60;
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    // Toggle dropdown visibility
+    const toggleDropdown = () => {
+        dropdownVisible = !dropdownVisible;
+        autoRefreshDropdown.classList.toggle('show', dropdownVisible);
+
+        // Add click outside listener when dropdown is shown
+        if (dropdownVisible) {
+            setTimeout(() => {
+                document.addEventListener('click', handleOutsideClick);
+            }, 10);
+        } else {
+            document.removeEventListener('click', handleOutsideClick);
+        }
+    };
+
+    // Handle clicks outside the dropdown
+    const handleOutsideClick = (event) => {
+        if (!autoRefreshBtn.contains(event.target) && !autoRefreshDropdown.contains(event.target)) {
+            dropdownVisible = false;
+            autoRefreshDropdown.classList.remove('show');
+            document.removeEventListener('click', handleOutsideClick);
+        }
     };
 
     // Update countdown display
@@ -293,11 +397,22 @@ function initializeAutoRefresh() {
         updateCountdown(minutes * 60);
     };
 
+    // Set up auto-refresh button click handler
+    autoRefreshBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDropdown();
+    });
+
     // Set up refresh option buttons
     refreshOptionBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             const minutes = parseInt(this.dataset.minutes, 10);
             minutes === 0 ? stopAutoRefresh() : startAutoRefresh(minutes);
+
+            // Hide dropdown after selection
+            dropdownVisible = false;
+            autoRefreshDropdown.classList.remove('show');
+            document.removeEventListener('click', handleOutsideClick);
         });
     });
 
@@ -317,6 +432,26 @@ function initializeAutoRefresh() {
 
 // Modal functionality
 function initializeModals() {
+    // Get all modals on the page
+    const modals = document.querySelectorAll('.modal');
+
+    // Initialize each modal with proper event handlers
+    modals.forEach(modal => {
+        // Add hidden.bs.modal event listener to ensure proper cleanup
+        modal.addEventListener('hidden.bs.modal', function() {
+            console.log('Modal hidden event from initializeModals for', modal.id);
+
+            // Force remove all modal backdrops
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+
+            // Force remove modal-open class and inline styles from body
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        });
+    });
+
     // Certificate details modal
     const certDetailsModal = document.getElementById('certDetailsModal');
     if (certDetailsModal) {
@@ -343,6 +478,30 @@ function initializeModals() {
 
             const expiryElement = document.getElementById('cert-expiry');
             if (expiryElement) expiryElement.textContent = expiryDate;
+        });
+    }
+
+    // Add Domain modal - special handling
+    const addDomainModal = document.getElementById('addDomainModal');
+    if (addDomainModal) {
+        // Add event listener for the close button
+        const closeButtons = addDomainModal.querySelectorAll('.btn-close, [data-bs-dismiss="modal"]');
+        closeButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                console.log('Add Domain modal close button clicked');
+
+                // Force cleanup after a short delay
+                setTimeout(() => {
+                    // Force remove all modal backdrops
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    backdrops.forEach(backdrop => backdrop.remove());
+
+                    // Force remove modal-open class and inline styles from body
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('overflow');
+                    document.body.style.removeProperty('padding-right');
+                }, 300);
+            });
         });
     }
 }

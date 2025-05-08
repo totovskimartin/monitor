@@ -19,6 +19,16 @@
     .domain-row {
         cursor: default;
     }
+
+    /* Spinning animation for refresh icon */
+    .spin {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 </style>
 
 {% endblock %}
@@ -32,8 +42,29 @@
             <p class="dashboard-subtitle">Monitor your domains and certificates</p>
         </div>
         <div class="dashboard-actions">
+            <!-- Auto-refresh Control -->
+            <div class="refresh-control me-2">
+                <button class="auto-refresh-btn" id="autoRefreshBtn" title="Auto-refresh settings">
+                    <i class="bi bi-arrow-repeat"></i>
+                    <span id="refresh-time-display">Off</span>
+                    <span id="refresh-indicator" class="refresh-indicator paused"></span>
+                </button>
+                <div class="auto-refresh-dropdown" id="autoRefreshDropdown">
+                    <div class="auto-refresh-header">
+                        <span>Auto-refresh</span>
+                    </div>
+                    <div class="auto-refresh-options">
+                        <button class="auto-refresh-option" data-minutes="0">Off</button>
+                        <button class="auto-refresh-option" data-minutes="1">1m</button>
+                        <button class="auto-refresh-option" data-minutes="5">5m</button>
+                        <button class="auto-refresh-option" data-minutes="15">15m</button>
+                        <button class="auto-refresh-option" data-minutes="30">30m</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="btn-group">
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                <button class="btn btn-primary" id="openAddDomainModal" data-bs-toggle="modal" data-bs-target="#addDomainModal">
                     <i class="bi bi-plus-lg"></i> Add Domain
                 </button>
                 <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
@@ -147,23 +178,22 @@
                                             {% for status in domain.uptime_segments %}
                                                 <div class="uptime-segment uptime-{{ status }}"></div>
                                             {% endfor %}
-                                            {% if domain.uptime_percentage is not none %}
-                                                <div class="uptime-percentage
-                                                    {% if domain.uptime_percentage >= 99 %}uptime-high
-                                                    {% elif domain.uptime_percentage >= 90 %}uptime-medium
-                                                    {% else %}uptime-low{% endif %}">
-                                                    {{ domain.uptime_percentage }}%
-                                                </div>
-                                            {% else %}
-                                                <div class="uptime-percentage">N/A</div>
-                                            {% endif %}
                                         {% else %}
                                             {% for i in range(12) %}
                                                 <div class="uptime-segment uptime-unknown"></div>
                                             {% endfor %}
-                                            <div class="uptime-percentage">N/A</div>
                                         {% endif %}
                                     </div>
+                                    {% if domain.uptime_segments and domain.uptime_percentage is not none %}
+                                        <div class="uptime-percentage
+                                            {% if domain.uptime_percentage >= 99 %}uptime-high
+                                            {% elif domain.uptime_percentage >= 90 %}uptime-medium
+                                            {% else %}uptime-low{% endif %}">
+                                            {{ domain.uptime_percentage }}%
+                                        </div>
+                                    {% else %}
+                                        <div class="uptime-percentage">N/A</div>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td>
@@ -249,7 +279,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="addDomainSubmit">Add Domain</button>
+                <button type="button" class="btn btn-primary" id="addDomainSubmit" onclick="document.getElementById('addDomainForm').submit();">Add Domain</button>
             </div>
         </div>
     </div>
@@ -422,27 +452,122 @@
         const bulkDomainsSubmit = document.getElementById('bulkDomainsSubmit');
         const bulkDomainsForm = document.getElementById('bulkDomainsForm');
 
-        // Fix for modal backdrop issue
-        if (addDomainModal) {
-            addDomainModal.addEventListener('hidden.bs.modal', function() {
-                // Ensure backdrop is removed
-                const backdrop = document.querySelector('.modal-backdrop');
-                if (backdrop) {
-                    backdrop.remove();
+        // Add event listeners for the "Add Domain" button in the header
+        const addDomainBtn = document.getElementById('openAddDomainModal');
+        if (addDomainBtn) {
+            console.log('Add Domain button found:', addDomainBtn);
+            addDomainBtn.addEventListener('click', function(e) {
+                console.log('Add Domain button clicked');
+                // Prevent default action to ensure our code runs
+                e.preventDefault();
+
+                // Make sure the modal is properly initialized
+                if (typeof bootstrap !== 'undefined') {
+                    console.log('Bootstrap is defined');
+                    const modal = new bootstrap.Modal(addDomainModal);
+                    modal.show();
+                } else {
+                    console.error('Bootstrap is not defined');
+                    // Fallback to jQuery if available
+                    if (typeof $ !== 'undefined') {
+                        console.log('Using jQuery fallback');
+                        $(addDomainModal).modal('show');
+                    } else {
+                        console.error('Neither Bootstrap nor jQuery is available');
+                        // Last resort - try to use the data-bs-target attribute
+                        addDomainModal.classList.add('show');
+                        addDomainModal.style.display = 'block';
+                        document.body.classList.add('modal-open');
+
+                        // Add backdrop
+                        const backdrop = document.createElement('div');
+                        backdrop.className = 'modal-backdrop fade show';
+                        document.body.appendChild(backdrop);
+                    }
                 }
-                // Ensure body classes are cleaned up
+            });
+        } else {
+            console.error('Add Domain button not found');
+        }
+
+        // Enhanced fix for modal backdrop issue
+        if (addDomainModal) {
+            // Add event listener for when the modal is hidden
+            addDomainModal.addEventListener('hidden.bs.modal', function() {
+                console.log('Add Domain modal hidden event triggered');
+
+                // Force remove all modal backdrops
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    console.log('Removing backdrop from Add Domain modal');
+                    backdrop.remove();
+                });
+
+                // Force remove modal-open class and inline styles from body
                 document.body.classList.remove('modal-open');
                 document.body.style.removeProperty('overflow');
                 document.body.style.removeProperty('padding-right');
             });
+
+            // Add event listener for the close button
+            const closeButton = addDomainModal.querySelector('.btn-close, [data-bs-dismiss="modal"]');
+            if (closeButton) {
+                closeButton.addEventListener('click', function() {
+                    console.log('Add Domain modal close button clicked');
+
+                    // Force remove all modal backdrops after a short delay
+                    setTimeout(() => {
+                        const backdrops = document.querySelectorAll('.modal-backdrop');
+                        backdrops.forEach(backdrop => {
+                            console.log('Removing backdrop after close button click');
+                            backdrop.remove();
+                        });
+
+                        // Force remove modal-open class and inline styles from body
+                        document.body.classList.remove('modal-open');
+                        document.body.style.removeProperty('overflow');
+                        document.body.style.removeProperty('padding-right');
+                    }, 300); // Short delay to allow Bootstrap's own handlers to run first
+                });
+            }
         }
 
         if (addDomainSubmit && addDomainForm) {
             addDomainSubmit.addEventListener('click', function() {
+                console.log('Add Domain button clicked');
+
                 // Check if at least one monitoring option is selected
                 const monitorSSL = document.getElementById('monitorSSL').checked;
                 const monitorExpiry = document.getElementById('monitorExpiry').checked;
                 const monitorPing = document.getElementById('monitorPing').checked;
+
+                console.log('Monitoring options:', { monitorSSL, monitorExpiry, monitorPing });
+
+                if (!monitorSSL && !monitorExpiry && !monitorPing) {
+                    alert('Please select at least one monitoring option.');
+                    return;
+                }
+
+                // Log form action
+                console.log('Form action:', addDomainForm.action);
+                console.log('Form method:', addDomainForm.method);
+
+                // Submit the form
+                addDomainForm.submit();
+                console.log('Form submitted');
+            });
+        }
+
+        // Edit Domain Form Submit Handler
+        let editDomainSubmitBtn = document.getElementById('editDomainSubmit');
+        let editDomainFormEl = document.getElementById('editDomainForm');
+
+        if (editDomainSubmitBtn && editDomainFormEl) {
+            editDomainSubmitBtn.addEventListener('click', function() {
+                // Check if at least one monitoring option is selected
+                const monitorSSL = document.getElementById('editMonitorSSL').checked;
+                const monitorExpiry = document.getElementById('editMonitorExpiry').checked;
+                const monitorPing = document.getElementById('editMonitorPing').checked;
 
                 if (!monitorSSL && !monitorExpiry && !monitorPing) {
                     alert('Please select at least one monitoring option.');
@@ -450,7 +575,7 @@
                 }
 
                 // Submit the form
-                addDomainForm.submit();
+                editDomainFormEl.submit();
             });
         }
 
@@ -488,8 +613,6 @@
 
         // Edit Domain Modal
         const editDomainModal = document.getElementById('editDomainModal');
-        const editDomainSubmit = document.getElementById('editDomainSubmit');
-        const editDomainForm = document.getElementById('editDomainForm');
 
         // Fix for modal backdrop issue
         if (editDomainModal) {
@@ -505,23 +628,6 @@
                 document.body.style.removeProperty('padding-right');
             });
         }
-
-        if (editDomainSubmit && editDomainForm) {
-            editDomainSubmit.addEventListener('click', function() {
-                // Check if at least one monitoring option is selected
-                const monitorSSL = document.getElementById('editMonitorSSL').checked;
-                const monitorExpiry = document.getElementById('editMonitorExpiry').checked;
-                const monitorPing = document.getElementById('editMonitorPing').checked;
-
-                if (!monitorSSL && !monitorExpiry && !monitorPing) {
-                    alert('Please select at least one monitoring option.');
-                    return;
-                }
-
-                // Submit the form
-                editDomainForm.submit();
-            });
-        }
     });
 </script>
 
@@ -529,51 +635,161 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Handle ping indicators
-        function updatePingStatus() {
-            document.querySelectorAll('.ping-indicator').forEach(indicator => {
-                const host = indicator.getAttribute('data-host');
+        async function refreshAllPingStatuses() {
+            // Show loading state on the refresh button
+            const refreshButton = document.getElementById('refreshPingStatus');
+            if (refreshButton) {
+                refreshButton.disabled = true;
+                refreshButton.innerHTML = '<i class="bi bi-arrow-repeat spin"></i>';
+            }
 
-                // Make an AJAX call to check the actual ping status
-                fetch(`/check_ping/${host}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        const status = data.ping_status;
+            try {
+                // Get all ping indicators
+                const indicators = document.querySelectorAll('.ping-indicator');
+                const totalDomains = indicators.length;
+                let processedDomains = 0;
 
-                        // Remove all classes and add the new one
-                        indicator.classList.remove('ping-up', 'ping-down', 'ping-unknown');
-                        indicator.classList.add(`ping-${status}`);
+                // Process each domain
+                const promises = Array.from(indicators).map(async (indicator) => {
+                    const host = indicator.getAttribute('data-host');
+                    const row = indicator.closest('tr');
 
-                        // Update the title
-                        indicator.setAttribute('title', `Ping status: ${status}`);
+                    try {
+                        // Make an AJAX call to refresh the ping status
+                        const response = await fetch(`/api/ping/${host}/refresh`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
 
-                        // Find the parent row
-                        const row = indicator.closest('tr');
-                        if (row) {
-                            // Reload the page to update uptime statistics
-                            // This is a simple approach - in a production app, you might
-                            // want to update just the uptime chart via AJAX
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 1000);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
                         }
-                    })
-                    .catch(error => {
-                        console.error('Error checking ping status:', error);
-                    });
-            });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            // Update the ping indicator
+                            indicator.classList.remove('ping-up', 'ping-down', 'ping-unknown');
+                            indicator.classList.add(`ping-${data.data.ping_status}`);
+                            indicator.setAttribute('title', `Ping status: ${data.data.ping_status}`);
+
+                            // Update uptime chart if available
+                            if (data.data.uptime_segments && row) {
+                                const uptimeChart = row.querySelector('.uptime-chart');
+                                if (uptimeChart) {
+                                    // Clear existing segments
+                                    uptimeChart.innerHTML = '';
+
+                                    // Add new segments
+                                    data.data.uptime_segments.forEach(status => {
+                                        const segment = document.createElement('div');
+                                        segment.className = `uptime-segment uptime-${status}`;
+                                        uptimeChart.appendChild(segment);
+                                    });
+                                }
+
+                                // Update uptime percentage if available
+                                if (data.data.uptime_percentage !== undefined) {
+                                    const uptimePercentage = row.querySelector('.uptime-percentage');
+                                    if (uptimePercentage) {
+                                        uptimePercentage.textContent = `${data.data.uptime_percentage}%`;
+
+                                        // Update the class based on percentage
+                                        uptimePercentage.className = 'uptime-percentage';
+                                        if (data.data.uptime_percentage >= 99) {
+                                            uptimePercentage.classList.add('uptime-high');
+                                        } else if (data.data.uptime_percentage >= 90) {
+                                            uptimePercentage.classList.add('uptime-medium');
+                                        } else {
+                                            uptimePercentage.classList.add('uptime-low');
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Flash success indicator with animation
+                            if (row) {
+                                const originalBackground = row.style.backgroundColor;
+                                row.style.backgroundColor = 'rgba(var(--bs-success-rgb), 0.1)';
+
+                                // Reset background after animation
+                                setTimeout(() => {
+                                    row.style.backgroundColor = originalBackground;
+                                }, 1500);
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Error refreshing ping status for ${host}:`, error);
+                    }
+
+                    // Update progress
+                    processedDomains++;
+                });
+
+                // Wait for all domains to be processed
+                await Promise.all(promises);
+
+                // Show success message
+                const alertContainer = document.createElement('div');
+                alertContainer.className = 'alert alert-success alert-dismissible fade show';
+                alertContainer.setAttribute('role', 'alert');
+                alertContainer.innerHTML = `
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    Successfully refreshed ping status for all domains.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+
+                // Add the alert to the page
+                const container = document.querySelector('.dashboard-container');
+                if (container) {
+                    container.insertBefore(alertContainer, container.firstChild);
+
+                    // Auto-dismiss after 5 seconds
+                    setTimeout(() => {
+                        const bsAlert = new bootstrap.Alert(alertContainer);
+                        bsAlert.close();
+                    }, 5000);
+                }
+            } catch (error) {
+                console.error('Error refreshing ping statuses:', error);
+
+                // Show error message
+                const alertContainer = document.createElement('div');
+                alertContainer.className = 'alert alert-danger alert-dismissible fade show';
+                alertContainer.setAttribute('role', 'alert');
+                alertContainer.innerHTML = `
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Error refreshing ping status: ${error.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+
+                // Add the alert to the page
+                const container = document.querySelector('.dashboard-container');
+                if (container) {
+                    container.insertBefore(alertContainer, container.firstChild);
+                }
+            } finally {
+                // Reset button state
+                if (refreshButton) {
+                    refreshButton.disabled = false;
+                    refreshButton.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+                }
+            }
         }
 
         // Set up a button to manually refresh ping status
         const refreshButton = document.getElementById('refreshPingStatus');
         if (refreshButton) {
             refreshButton.addEventListener('click', function() {
-                updatePingStatus();
+                refreshAllPingStatuses();
             });
         }
 
         // Update every 5 minutes (300000 ms)
         // We use a longer interval since we're making actual API calls
-        setInterval(updatePingStatus, 300000);
+        setInterval(refreshAllPingStatuses, 300000);
     });
 </script>
 {% endblock %}

@@ -13,9 +13,8 @@ import io
 import csv
 import threading
 from logging.handlers import RotatingFileHandler
-
 from dataclasses import dataclass, field
-from notifications import send_test_notification, send_certificate_expiry_notification, send_domain_expiry_notification
+import notifications
 
 # Set up logging
 def setup_logging():
@@ -90,73 +89,37 @@ class PingStatus:
     response_time: float = 0.0  # in milliseconds
     response_history: list = field(default_factory=list)  # List of recent response times
 
-# Ping cache
-PING_CACHE = {}
+# Ping cache - using database cache
 PING_CACHE_EXPIRY = 300  # 5 minutes in seconds
-
-def load_ping_cache():
-    """Load the ping cache from disk"""
-    cache_file = os.path.join(DATA_DIR, "ping_cache.json")
-    if not os.path.exists(cache_file):
-        return {}
-
-    try:
-        with open(cache_file, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Error loading ping cache: {e}")
-        return {}
-
-def save_ping_cache(cache_data):
-    """Save the ping cache to disk"""
-    if not ensure_data_dir():
-        logger.error("Could not save ping cache: data directory not available")
-        return
-
-    cache_file = os.path.join(DATA_DIR, "ping_cache.json")
-
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(cache_data, f)
-    except IOError as e:
-        logger.error(f"Error saving ping cache: {e}")
 
 def get_cached_ping_data(domain):
     """Get ping data from cache if available and not expired"""
-    global PING_CACHE
+    cache_key = f"ping_{domain}"
+    cached_data = db.get_cache(cache_key)
 
-    # Load cache if it's empty
-    if not PING_CACHE:
-        PING_CACHE = load_ping_cache()
-
-    if domain in PING_CACHE:
-        cache_entry = PING_CACHE[domain]
-        cache_time = cache_entry.get('timestamp', 0)
-        current_time = time.time()
-
-        # Check if cache entry is still valid
-        if current_time - cache_time < PING_CACHE_EXPIRY:
-            logger.debug(f"Using cached ping data for {domain}")
-            return cache_entry
+    if cached_data:
+        logger.debug(f"Using cached ping data for {domain}")
+        return cached_data
 
     return None
 
 def cache_ping_data(domain, ping_result):
     """Cache ping data for a domain"""
-    global PING_CACHE
+    cache_key = f"ping_{domain}"
 
-    # Load cache if it's empty
-    if not PING_CACHE:
-        PING_CACHE = load_ping_cache()
-
-    # Add or update cache entry
-    PING_CACHE[domain] = {
+    # Prepare data for caching
+    cache_data = {
         'timestamp': time.time(),
         'status': ping_result['status'],
         'response_time': ping_result['response_time']
     }
 
-    save_ping_cache(PING_CACHE)
+    # Log what we're caching
+    logger.debug(f"Caching ping data for {domain}: status={ping_result['status']}, " +
+                f"response_time={ping_result['response_time']}")
+
+    # Cache the data
+    db.set_cache(cache_key, cache_data, PING_CACHE_EXPIRY)
 
 def check_ping(domain):
     """Check if a domain is reachable via ping and return status and response time with caching"""
@@ -357,6 +320,7 @@ class AppSettings:
     auto_refresh_interval: int
     theme: str
     timezone: str
+    warning_threshold_days: int = 10
 
 @dataclass
 class NotificationSettings:
@@ -365,6 +329,9 @@ class NotificationSettings:
     teams: dict
     slack: dict
     discord: dict
+    telegram: dict
+    webhook: dict
+    sms: dict
 
 @dataclass
 class Stats:
@@ -384,9 +351,10 @@ class PingStats:
 import auth
 import database as db
 import secrets
+from database import get_user_preference, set_user_preference
 
 app = Flask(__name__, static_folder='static')
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 
 # CSRF token generation
 def generate_csrf_token():
@@ -396,6 +364,226 @@ def generate_csrf_token():
 
 # Add CSRF token to all templates
 app.jinja_env.globals['csrf_token'] = generate_csrf_token
+
+# Add current timestamp to all templates to prevent image caching
+@app.context_processor
+def inject_now():
+    return {'now': int(time.time())}
+
+# Add profile picture helper function to templates
+@app.context_processor
+def inject_profile_picture_helper():
+    def profile_picture(profile_image, size=32, font_size=18):
+        """
+        Generate HTML for a profile picture with fallback to default icon
+
+        Args:
+            profile_image: Path to profile image or None
+            size: Size of the profile image in pixels
+            font_size: Size of the default icon font in pixels
+
+        Returns:
+            Dictionary with profile image information
+        """
+        return {
+            'profile_image': profile_image,
+            'size': size,
+            'font_size': font_size
+        }
+
+    return {'profile_picture': profile_picture}
+
+# Function to clean up old temporary profile images
+def cleanup_temp_profile_images():
+    """Remove temporary profile images older than 1 hour"""
+    import os
+    import time
+    from datetime import datetime, timedelta
+
+    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'temp')
+    if not os.path.exists(temp_dir):
+        return
+
+    # Get current time
+    now = time.time()
+
+    # Check all files in the temp directory
+    for filename in os.listdir(temp_dir):
+        file_path = os.path.join(temp_dir, filename)
+
+        # Skip if not a file
+        if not os.path.isfile(file_path):
+            continue
+
+        # Get file modification time
+        file_mod_time = os.path.getmtime(file_path)
+
+        # Remove if older than 1 hour
+        if now - file_mod_time > 3600:  # 3600 seconds = 1 hour
+            try:
+                os.remove(file_path)
+                logger.info(f"Removed old temporary file: {filename}")
+            except Exception as e:
+                logger.error(f"Error removing temporary file {filename}: {str(e)}")
+
+# Run cleanup on startup
+cleanup_temp_profile_images()
+
+# Custom Jinja2 filter for formatting datetime
+@app.template_filter('datetime')
+def format_datetime(value, format='%Y-%m-%d %H:%M:%S'):
+    """Format a datetime object or timestamp to string with user's timezone"""
+    # Import pytz at the top level
+    import pytz
+    from datetime import timezone
+
+    # Get the current user's timezone preference
+    current_user = auth.get_current_user()
+    if current_user and 'settings' in current_user and 'timezone' in current_user['settings']:
+        timezone_str = current_user['settings']['timezone']
+        logger.debug(f"Using user's timezone preference: {timezone_str}")
+    else:
+        # Fallback to app settings
+        app_settings = get_app_settings()
+        timezone_str = app_settings.timezone
+        logger.debug(f"Using app timezone setting: {timezone_str}")
+
+    # Get the user's timezone
+    try:
+        user_tz = pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        logger.warning(f"Unknown timezone {timezone_str}, using UTC")
+        user_tz = pytz.UTC
+
+    # Handle timestamp (integer or float)
+    if isinstance(value, (int, float)):
+        try:
+            # Convert timestamp to datetime (assume UTC)
+            utc_dt = datetime.fromtimestamp(value, tz=timezone.utc)
+            # Log the conversion for debugging
+            logger.debug(f"Converting timestamp {value} to UTC datetime: {utc_dt}")
+            # Convert to user's timezone
+            local_dt = utc_dt.astimezone(user_tz)
+            logger.debug(f"Converted to user timezone ({timezone_str}): {local_dt}")
+            # Format the datetime
+            formatted = local_dt.strftime(format)
+            logger.debug(f"Formatted datetime: {formatted}")
+            return formatted
+        except (ValueError, OverflowError) as e:
+            logger.error(f"Error converting timestamp {value}: {e}")
+            return ''
+
+    # Handle datetime object
+    elif value and isinstance(value, datetime):
+        try:
+            # Assume the datetime is in UTC if it has no timezone
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+                logger.debug(f"Added UTC timezone to naive datetime: {value}")
+            # Convert to user's timezone
+            local_dt = value.astimezone(user_tz)
+            logger.debug(f"Converted to user timezone ({timezone_str}): {local_dt}")
+            # Format the datetime
+            formatted = local_dt.strftime(format)
+            logger.debug(f"Formatted datetime: {formatted}")
+            return formatted
+        except Exception as e:
+            logger.error(f"Error formatting datetime {value}: {e}")
+            return str(value)
+
+    # Handle ISO format string
+    elif isinstance(value, str) and value:
+        try:
+            # Parse ISO format string
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            logger.debug(f"Parsed ISO datetime string: {dt}")
+            # Convert to user's timezone
+            local_dt = dt.astimezone(user_tz)
+            logger.debug(f"Converted to user timezone ({timezone_str}): {local_dt}")
+            # Format the datetime
+            formatted = local_dt.strftime(format)
+            logger.debug(f"Formatted datetime: {formatted}")
+            return formatted
+        except (ValueError, OverflowError) as e:
+            logger.error(f"Error parsing ISO datetime string {value}: {e}")
+            return value
+
+    return ''
+
+# Add a filter for relative time (e.g., "2 hours ago")
+@app.template_filter('relative_time')
+def relative_time(value):
+    """Format a timestamp as a relative time string"""
+    import pytz
+    from datetime import timezone
+
+    # Get the current user's timezone preference
+    current_user = auth.get_current_user()
+    if current_user and 'settings' in current_user and 'timezone' in current_user['settings']:
+        timezone_str = current_user['settings']['timezone']
+        logger.debug(f"Using user's timezone preference for relative time: {timezone_str}")
+    else:
+        # Fallback to app settings
+        app_settings = get_app_settings()
+        timezone_str = app_settings.timezone
+        logger.debug(f"Using app timezone setting for relative time: {timezone_str}")
+
+    # Get the user's timezone
+    try:
+        user_tz = pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        user_tz = pytz.UTC
+
+    # Handle timestamp (integer or float)
+    if isinstance(value, (int, float)):
+        try:
+            # Convert timestamp to datetime (assume UTC)
+            utc_dt = datetime.fromtimestamp(value, tz=timezone.utc)
+            # Convert to user's timezone
+            local_dt = utc_dt.astimezone(user_tz)
+        except (ValueError, OverflowError) as e:
+            logger.error(f"Error converting timestamp {value}: {e}")
+            return ''
+    # Handle datetime object
+    elif value and isinstance(value, datetime):
+        try:
+            # Assume the datetime is in UTC if it has no timezone
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            # Convert to user's timezone
+            local_dt = value.astimezone(user_tz)
+        except Exception as e:
+            logger.error(f"Error formatting datetime {value}: {e}")
+            return str(value)
+    else:
+        return ''
+
+    # Calculate the time difference
+    now = datetime.now(tz=user_tz)
+    diff = now - local_dt
+
+    # Format the relative time
+    seconds = diff.total_seconds()
+    if seconds < 60:
+        return 'just now'
+    elif seconds < 3600:
+        minutes = int(seconds / 60)
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    elif seconds < 86400:
+        hours = int(seconds / 3600)
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    elif seconds < 604800:
+        days = int(seconds / 86400)
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    elif seconds < 2592000:
+        weeks = int(seconds / 604800)
+        return f"{weeks} week{'s' if weeks != 1 else ''} ago"
+    elif seconds < 31536000:
+        months = int(seconds / 2592000)
+        return f"{months} month{'s' if months != 1 else ''} ago"
+    else:
+        years = int(seconds / 31536000)
+        return f"{years} year{'s' if years != 1 else ''} ago"
 
 # Add security headers
 @app.after_request
@@ -457,6 +645,16 @@ def login():
 
         # Create session
         session_token = auth.create_user_session(user['id'])
+
+        # Log the login action
+        db.log_user_action(
+            user_id=user['id'],
+            username=user['username'],
+            action_type='login',
+            resource_type='session',
+            details='User logged in',
+            ip_address=request.remote_addr
+        )
 
         # Set session cookie
         response = make_response(redirect(url_for('index')))
@@ -541,6 +739,18 @@ def register():
             flash('Error creating user', 'error')
             return render_template('register.html')
 
+        # Log the user creation action
+        db.log_user_action(
+            user_id=user_id,
+            username=username,
+            action_type='create',
+            resource_type='user',
+            resource_id=user_id,
+            resource_name=username,
+            details=f'User self-registered with email {email}',
+            ip_address=request.remote_addr
+        )
+
         flash('Account created successfully. You can now log in.', 'success')
         return redirect(url_for('login'))
 
@@ -622,11 +832,25 @@ def setup_whois_api_key():
 @app.route('/logout')
 def logout():
     """Logout user"""
+    # Get current user before logging out
+    current_user = auth.get_current_user()
+
     # Get session token from cookie
     session_token = request.cookies.get(auth.SESSION_COOKIE_NAME)
     if session_token:
         # Delete session from database
         db.delete_session(session_token)
+
+    # Log the logout action if we have user information
+    if current_user:
+        db.log_user_action(
+            user_id=current_user['id'],
+            username=current_user['username'],
+            action_type='logout',
+            resource_type='session',
+            details='User logged out',
+            ip_address=request.remote_addr
+        )
 
     # Clear session cookie and all session data
     response = make_response(redirect(url_for('login')))
@@ -675,14 +899,15 @@ DEFAULT_APP_SETTINGS = {
     'auto_refresh_enabled': False,
     'auto_refresh_interval': 5,
     'theme': 'light',
-    'timezone': 'UTC'
+    'timezone': 'UTC',
+    'warning_threshold_days': 10
 }
 
 DEFAULT_NOTIFICATIONS = {
     'email': {
         'enabled': False,
-        'smtp_server': 'smtp.office365.com',
-        'smtp_port': 587,
+        'smtp_server': '',
+        'smtp_port': '',
         'smtp_username': '',
         'smtp_password': '',
         'notification_email': '',
@@ -701,10 +926,29 @@ DEFAULT_NOTIFICATIONS = {
         'enabled': False,
         'webhook_url': '',
         'username': 'Certifly Bot'
+    },
+    'telegram': {
+        'enabled': False,
+        'bot_token': '',
+        'chat_id': ''
+    },
+    'webhook': {
+        'enabled': False,
+        'webhook_url': '',
+        'format': 'json',
+        'custom_headers': '{}',
+        'custom_fields': '{}'
+    },
+    'sms': {
+        'enabled': False,
+        'account_sid': '',
+        'auth_token': '',
+        'from_number': '',
+        'to_number': ''
     }
 }
 
-# Compatibility functions for code that still uses YAML configuration
+# Simplified compatibility functions for code that still uses YAML configuration
 def load_config():
     """Compatibility function that loads configuration from database"""
     # Create a config dictionary with all settings from the database
@@ -712,8 +956,6 @@ def load_config():
         'ssl_domains': db.get_setting('ssl_domains', []),
         'domain_expiry': db.get_setting('domain_expiry', []),
         'ping_hosts': db.get_setting('ping_hosts', []),
-        'acknowledged_alerts': db.get_setting('acknowledged_alerts', []),
-        'deleted_alerts': db.get_setting('deleted_alerts', []),
         'email_settings': db.get_setting('email_settings', DEFAULT_EMAIL_SETTINGS),
         'app_settings': db.get_setting('app_settings', DEFAULT_APP_SETTINGS),
         'api_settings': db.get_setting('api_settings', {}),
@@ -724,24 +966,10 @@ def load_config():
 def save_config(data):
     """Compatibility function that saves configuration to database"""
     # Save each section of the config to the database
-    if 'ssl_domains' in data:
-        db.set_setting('ssl_domains', data['ssl_domains'])
-    if 'domain_expiry' in data:
-        db.set_setting('domain_expiry', data['domain_expiry'])
-    if 'ping_hosts' in data:
-        db.set_setting('ping_hosts', data['ping_hosts'])
-    if 'acknowledged_alerts' in data:
-        db.set_setting('acknowledged_alerts', data['acknowledged_alerts'])
-    if 'deleted_alerts' in data:
-        db.set_setting('deleted_alerts', data['deleted_alerts'])
-    if 'email_settings' in data:
-        db.set_setting('email_settings', data['email_settings'])
-    if 'app_settings' in data:
-        db.set_setting('app_settings', data['app_settings'])
-    if 'api_settings' in data:
-        db.set_setting('api_settings', data['api_settings'])
-    if 'notifications' in data:
-        db.set_setting('notifications', data['notifications'])
+    for key in ['ssl_domains', 'domain_expiry', 'ping_hosts', 'email_settings',
+                'app_settings', 'api_settings', 'notifications']:
+        if key in data:
+            db.set_setting(key, data[key])
 
 def get_email_settings() -> EmailSettings:
     """Get email settings from database"""
@@ -781,11 +1009,19 @@ def get_app_settings() -> AppSettings:
         logger.warning(f"Invalid auto_refresh_interval value: {settings.get('auto_refresh_interval')}. Using default value of 5.")
         auto_refresh_interval = 5
 
+    # Handle warning_threshold_days safely
+    try:
+        warning_threshold = int(settings.get('warning_threshold_days', 10))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid warning_threshold_days value: {settings.get('warning_threshold_days')}. Using default value of 10.")
+        warning_threshold = 10
+
     return AppSettings(
         auto_refresh_enabled=settings.get('auto_refresh_enabled', False),
         auto_refresh_interval=auto_refresh_interval,
         theme=settings.get('theme', 'light'),
-        timezone=settings.get('timezone', 'UTC')
+        timezone=settings.get('timezone', 'UTC'),
+        warning_threshold_days=warning_threshold
     )
 
 def get_notification_settings() -> NotificationSettings:
@@ -801,12 +1037,21 @@ def get_notification_settings() -> NotificationSettings:
         notifications['slack'] = DEFAULT_NOTIFICATIONS['slack']
     if 'discord' not in notifications:
         notifications['discord'] = DEFAULT_NOTIFICATIONS['discord']
+    if 'telegram' not in notifications:
+        notifications['telegram'] = DEFAULT_NOTIFICATIONS['telegram']
+    if 'webhook' not in notifications:
+        notifications['webhook'] = DEFAULT_NOTIFICATIONS['webhook']
+    if 'sms' not in notifications:
+        notifications['sms'] = DEFAULT_NOTIFICATIONS['sms']
 
     return NotificationSettings(
         email=notifications.get('email', {}),
         teams=notifications.get('teams', {}),
         slack=notifications.get('slack', {}),
-        discord=notifications.get('discord', {})
+        discord=notifications.get('discord', {}),
+        telegram=notifications.get('telegram', {}),
+        webhook=notifications.get('webhook', {}),
+        sms=notifications.get('sms', {})
     )
 
 # WHOIS caching functions using database
@@ -981,160 +1226,41 @@ def get_whois_data(domain: str):
         logger.error(f"Unexpected error fetching WHOIS data for {domain}: {str(e)}", exc_info=True)
         return None
 
-# Domain expiry cache
-DOMAIN_EXPIRY_CACHE = {}
+# Domain expiry cache - using database cache
 DOMAIN_EXPIRY_CACHE_EXPIRY = 86400  # 24 hours in seconds (same as WHOIS cache)
-
-def load_domain_expiry_cache():
-    """Load the domain expiry cache from disk"""
-    cache_file = os.path.join(DATA_DIR, "domain_expiry_cache.json")
-    if not os.path.exists(cache_file):
-        logger.debug("Domain expiry cache file does not exist, returning empty cache")
-        return {}
-
-    try:
-        with open(cache_file, 'r') as f:
-            try:
-                cache_data = json.load(f)
-                logger.debug(f"Loaded domain expiry cache with {len(cache_data)} entries")
-
-                # Process each domain entry
-                for domain, data in list(cache_data.items()):  # Use list() to allow modification during iteration
-                    # Skip invalid entries
-                    if not isinstance(data, dict):
-                        logger.warning(f"Invalid cache entry for {domain}: {data}. Removing from cache.")
-                        cache_data.pop(domain, None)
-                        continue
-
-                    # Validate and fix days_remaining
-                    if 'days_remaining' in data:
-                        try:
-                            data['days_remaining'] = int(data['days_remaining'])
-                        except (ValueError, TypeError):
-                            logger.warning(f"Invalid days_remaining in cache for {domain}: {data['days_remaining']}. Setting to -1.")
-                            data['days_remaining'] = -1
-                    else:
-                        logger.warning(f"Missing days_remaining in cache for {domain}. Setting to -1.")
-                        data['days_remaining'] = -1
-
-                    # Validate and fix expiry_date
-                    if 'expiry_date' in data:
-                        try:
-                            if isinstance(data['expiry_date'], str):
-                                data['expiry_date'] = datetime.fromisoformat(data['expiry_date'])
-                            elif not isinstance(data['expiry_date'], datetime):
-                                logger.warning(f"Invalid expiry_date type in cache for {domain}: {type(data['expiry_date'])}. Setting to current time.")
-                                data['expiry_date'] = datetime.now()
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Error parsing expiry_date in cache for {domain}: {e}. Setting to current time.")
-                            data['expiry_date'] = datetime.now()
-                    else:
-                        logger.warning(f"Missing expiry_date in cache for {domain}. Setting to current time.")
-                        data['expiry_date'] = datetime.now()
-
-                    # Validate status
-                    valid_statuses = ['valid', 'warning', 'expired', 'error']
-                    if 'status' not in data or data['status'] not in valid_statuses:
-                        logger.warning(f"Invalid status in cache for {domain}: {data.get('status')}. Setting to 'error'.")
-                        data['status'] = 'error'
-
-                    # Validate registrar
-                    if 'registrar' not in data or not data['registrar']:
-                        logger.warning(f"Missing registrar in cache for {domain}. Setting to 'Unknown'.")
-                        data['registrar'] = 'Unknown'
-
-                    # Validate timestamp
-                    if 'timestamp' not in data or not isinstance(data['timestamp'], (int, float)):
-                        logger.warning(f"Invalid timestamp in cache for {domain}: {data.get('timestamp')}. Setting to current time.")
-                        data['timestamp'] = time.time()
-
-                return cache_data
-            except json.JSONDecodeError as e:
-                logger.error(f"Error decoding domain expiry cache JSON: {e}")
-                return {}
-    except IOError as e:
-        logger.error(f"Error reading domain expiry cache file: {e}")
-        return {}
-
-def save_domain_expiry_cache(cache_data):
-    """Save the domain expiry cache to disk"""
-    if not cache_data:
-        logger.warning("Empty cache data, not saving domain expiry cache")
-        return
-
-    if not ensure_data_dir():
-        logger.error("Could not save domain expiry cache: data directory not available")
-        return
-
-    cache_file = os.path.join(DATA_DIR, "domain_expiry_cache.json")
-
-    # Convert datetime objects to strings for JSON serialization
-    serializable_cache = {}
-    for domain, data in cache_data.items():
-        # Skip invalid entries
-        if not isinstance(data, dict):
-            logger.warning(f"Invalid cache entry for {domain}: {data}. Skipping.")
-            continue
-
-        # Create a copy to avoid modifying the original
-        try:
-            serializable_cache[domain] = data.copy()
-
-            # Convert expiry_date to string if it's a datetime
-            if 'expiry_date' in data:
-                if isinstance(data['expiry_date'], datetime):
-                    serializable_cache[domain]['expiry_date'] = data['expiry_date'].isoformat()
-                elif not isinstance(data['expiry_date'], str):
-                    logger.warning(f"Invalid expiry_date type in cache for {domain}: {type(data['expiry_date'])}. Using current time.")
-                    serializable_cache[domain]['expiry_date'] = datetime.now().isoformat()
-
-            # Ensure days_remaining is an integer
-            if 'days_remaining' in data:
-                try:
-                    serializable_cache[domain]['days_remaining'] = int(data['days_remaining'])
-                except (ValueError, TypeError):
-                    logger.warning(f"Invalid days_remaining in cache for {domain}: {data['days_remaining']}. Setting to -1.")
-                    serializable_cache[domain]['days_remaining'] = -1
-        except Exception as e:
-            logger.error(f"Error processing cache entry for {domain}: {str(e)}")
-            continue
-
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(serializable_cache, f)
-        logger.debug(f"Saved domain expiry cache with {len(serializable_cache)} entries")
-    except IOError as e:
-        logger.error(f"Error saving domain expiry cache: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error saving domain expiry cache: {str(e)}")
+# Removed global DOMAIN_EXPIRY_CACHE variable - using database cache instead
 
 def get_cached_domain_expiry_data(domain):
     """Get domain expiry data from cache if available and not expired"""
-    global DOMAIN_EXPIRY_CACHE
+    cache_key = f"domain_expiry_{domain}"
+    cached_data = db.get_cache(cache_key)
 
-    # Load cache if it's empty
-    if not DOMAIN_EXPIRY_CACHE:
-        DOMAIN_EXPIRY_CACHE = load_domain_expiry_cache()
+    if cached_data:
+        logger.debug(f"Using cached domain expiry data for {domain}")
 
-    if domain in DOMAIN_EXPIRY_CACHE:
-        cache_entry = DOMAIN_EXPIRY_CACHE[domain]
-        cache_time = cache_entry.get('timestamp', 0)
-        current_time = time.time()
+        # Convert expiry_date string back to datetime if needed
+        if 'expiry_date' in cached_data and isinstance(cached_data['expiry_date'], str):
+            try:
+                cached_data['expiry_date'] = datetime.fromisoformat(cached_data['expiry_date'])
+            except ValueError:
+                logger.warning(f"Could not parse expiry_date from cache for {domain}")
+                return None
 
-        # Check if cache entry is still valid
-        if current_time - cache_time < DOMAIN_EXPIRY_CACHE_EXPIRY:
-            logger.debug(f"Using cached domain expiry data for {domain}")
-            return cache_entry
+        # Ensure days_remaining is an integer
+        if 'days_remaining' in cached_data:
+            try:
+                cached_data['days_remaining'] = int(cached_data['days_remaining'])
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid days_remaining in cache for {domain}: {cached_data.get('days_remaining')}. Setting to -1.")
+                cached_data['days_remaining'] = -1
+
+        return cached_data
 
     return None
 
 def cache_domain_expiry_data(domain, domain_status):
     """Cache domain expiry data for a domain"""
-    global DOMAIN_EXPIRY_CACHE
-
-    # Load cache if it's empty
-    if not DOMAIN_EXPIRY_CACHE:
-        DOMAIN_EXPIRY_CACHE = load_domain_expiry_cache()
+    cache_key = f"domain_expiry_{domain}"
 
     # Validate domain_status object
     if not domain_status:
@@ -1162,21 +1288,23 @@ def cache_domain_expiry_data(domain, domain_status):
     valid_statuses = ['valid', 'warning', 'expired', 'error']
     status = domain_status.status if domain_status.status in valid_statuses else 'error'
 
-    # Add or update cache entry
-    DOMAIN_EXPIRY_CACHE[domain] = {
-        'timestamp': time.time(),
+    # Convert datetime to string for JSON serialization
+    expiry_date_str = expiry_date.isoformat() if expiry_date else None
+
+    # Prepare data for caching
+    cache_data = {
         'days_remaining': days_remaining,
-        'expiry_date': expiry_date,
+        'expiry_date': expiry_date_str,  # Store as ISO format string
         'registrar': registrar,
         'status': status
     }
 
-    # Save to disk
-    try:
-        save_domain_expiry_cache(DOMAIN_EXPIRY_CACHE)
-    except Exception as e:
-        logger.error(f"Error saving domain expiry cache: {str(e)}")
-        # Continue even if saving fails
+    # Log what we're caching
+    logger.debug(f"Caching domain expiry data for {domain}: days_remaining={days_remaining}, " +
+                f"expiry_date={expiry_date_str}, registrar={registrar}, status={status}")
+
+    # Cache the data
+    db.set_cache(cache_key, cache_data, DOMAIN_EXPIRY_CACHE_EXPIRY)
 
 def check_domain_expiry(domain: str) -> DomainStatus:
     """Check domain expiry date using whois with caching"""
@@ -1278,12 +1406,12 @@ def check_domain_expiry(domain: str) -> DomainStatus:
         # Get registrar info
         registrar = whois_data.get('registrar', default_registrar)
 
-        # Get warning threshold from settings
-        settings = get_email_settings()
+        # Get warning threshold from app settings
+        app_settings = get_app_settings()
         try:
-            warning_threshold = int(settings.warning_threshold_days)
+            warning_threshold = int(app_settings.warning_threshold_days)
         except (ValueError, TypeError):
-            logger.warning(f"Invalid warning_threshold_days: {settings.warning_threshold_days}. Using default value of 10.")
+            logger.warning(f"Invalid warning_threshold_days: {app_settings.warning_threshold_days}. Using default value of 10.")
             warning_threshold = 10
 
         # Determine status
@@ -1323,16 +1451,25 @@ def check_domain_expiry(domain: str) -> DomainStatus:
 
                 # Send notifications to all enabled platforms
                 if notification_settings.email.get('enabled', False):
-                    send_domain_expiry_notification('email', notification_settings.email, domain_status)
+                    notifications.send_domain_expiry_notification('email', notification_settings.email, domain_status)
 
                 if notification_settings.teams.get('enabled', False):
-                    send_domain_expiry_notification('teams', notification_settings.teams, domain_status)
+                    notifications.send_domain_expiry_notification('teams', notification_settings.teams, domain_status)
 
                 if notification_settings.slack.get('enabled', False):
-                    send_domain_expiry_notification('slack', notification_settings.slack, domain_status)
+                    notifications.send_domain_expiry_notification('slack', notification_settings.slack, domain_status)
 
                 if notification_settings.discord.get('enabled', False):
-                    send_domain_expiry_notification('discord', notification_settings.discord, domain_status)
+                    notifications.send_domain_expiry_notification('discord', notification_settings.discord, domain_status)
+
+                if notification_settings.telegram.get('enabled', False):
+                    notifications.send_domain_expiry_notification('telegram', notification_settings.telegram, domain_status)
+
+                if notification_settings.webhook.get('enabled', False):
+                    notifications.send_domain_expiry_notification('webhook', notification_settings.webhook, domain_status)
+
+                if notification_settings.sms.get('enabled', False):
+                    notifications.send_domain_expiry_notification('sms', notification_settings.sms, domain_status)
             except Exception as notify_error:
                 logger.error(f"Error sending notifications for {domain}: {str(notify_error)}")
                 # Continue even if notification fails
@@ -1362,14 +1499,18 @@ def check_domain_expiry(domain: str) -> DomainStatus:
 
         # Cache the error result with a shorter expiry time (1 hour)
         try:
-            DOMAIN_EXPIRY_CACHE[domain] = {
-                'timestamp': time.time() - DOMAIN_EXPIRY_CACHE_EXPIRY + 3600,  # Expire in 1 hour
+            cache_key = f"domain_expiry_{domain}"
+            # Convert datetime to string for JSON serialization
+            expiry_date_str = default_expiry_date.isoformat() if default_expiry_date else None
+
+            cache_data = {
                 'days_remaining': default_days_remaining,
-                'expiry_date': default_expiry_date,
+                'expiry_date': expiry_date_str,  # Store as ISO format string
                 'registrar': f"{default_registrar} (Error retrieving data)",
                 'status': default_status
             }
-            save_domain_expiry_cache(DOMAIN_EXPIRY_CACHE)
+            # Cache for 1 hour instead of 24 hours
+            db.set_cache(cache_key, cache_data, 3600)
         except Exception as cache_error:
             logger.error(f"Error caching error status for {domain}: {str(cache_error)}")
             # Continue even if caching fails
@@ -1378,143 +1519,125 @@ def check_domain_expiry(domain: str) -> DomainStatus:
 
 
 
-# SSL Certificate cache
-SSL_CACHE = {}
+# SSL Certificate cache - using database cache
 SSL_CACHE_EXPIRY = 3600  # 1 hour in seconds
-
-def load_ssl_cache():
-    """Load the SSL certificate cache from disk"""
-    cache_file = os.path.join(DATA_DIR, "ssl_cache.json")
-    if not os.path.exists(cache_file):
-        return {}
-
-    try:
-        with open(cache_file, 'r') as f:
-            cache_data = json.load(f)
-            # Convert string dates back to datetime objects
-            for domain, data in cache_data.items():
-                if 'expiry_date' in data:
-                    try:
-                        data['expiry_date'] = datetime.fromisoformat(data['expiry_date'])
-                    except ValueError:
-                        # If date can't be parsed, consider the cache entry invalid
-                        data['timestamp'] = 0
-            return cache_data
-    except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Error loading SSL cache: {e}")
-        return {}
-
-def save_ssl_cache(cache_data):
-    """Save the SSL certificate cache to disk"""
-    if not ensure_data_dir():
-        logger.error("Could not save SSL cache: data directory not available")
-        return
-
-    cache_file = os.path.join(DATA_DIR, "ssl_cache.json")
-
-    # Convert datetime objects to strings for JSON serialization
-    serializable_cache = {}
-    for domain, data in cache_data.items():
-        serializable_cache[domain] = data.copy()
-        if 'expiry_date' in data and isinstance(data['expiry_date'], datetime):
-            serializable_cache[domain]['expiry_date'] = data['expiry_date'].isoformat()
-
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(serializable_cache, f)
-    except IOError as e:
-        logger.error(f"Error saving SSL cache: {e}")
 
 def get_cached_ssl_data(domain):
     """Get SSL certificate data from cache if available and not expired"""
-    global SSL_CACHE
+    cache_key = f"ssl_{domain}"
+    cached_data = db.get_cache(cache_key)
 
-    # Load cache if it's empty
-    if not SSL_CACHE:
-        SSL_CACHE = load_ssl_cache()
+    if cached_data:
+        logger.debug(f"Using cached SSL data for {domain}")
 
-    if domain in SSL_CACHE:
-        cache_entry = SSL_CACHE[domain]
-        cache_time = cache_entry.get('timestamp', 0)
-        current_time = time.time()
+        # Convert expiry_date string back to datetime if needed
+        if 'expiry_date' in cached_data and isinstance(cached_data['expiry_date'], str) and cached_data['expiry_date']:
+            try:
+                cached_data['expiry_date'] = datetime.fromisoformat(cached_data['expiry_date'])
+                logger.debug(f"Successfully converted expiry_date string to datetime for {domain}")
+            except ValueError as e:
+                logger.warning(f"Could not parse expiry_date from cache for {domain}: {str(e)}")
+                return None
+            except Exception as e:
+                logger.warning(f"Unexpected error parsing expiry_date for {domain}: {str(e)}")
+                return None
 
-        # Check if cache entry is still valid
-        if current_time - cache_time < SSL_CACHE_EXPIRY:
-            logger.debug(f"Using cached SSL data for {domain}")
-            return cache_entry
+        return cached_data
 
     return None
 
 def cache_ssl_data(domain, cert_status):
     """Cache SSL certificate data for a domain"""
-    global SSL_CACHE
+    cache_key = f"ssl_{domain}"
 
-    # Load cache if it's empty
-    if not SSL_CACHE:
-        SSL_CACHE = load_ssl_cache()
+    # Convert datetime to string for JSON serialization
+    expiry_date_str = cert_status.expiry_date.isoformat() if cert_status.expiry_date else None
 
-    # Add or update cache entry
-    SSL_CACHE[domain] = {
-        'timestamp': time.time(),
+    # Prepare data for caching
+    cache_data = {
         'days_remaining': cert_status.days_remaining,
-        'expiry_date': cert_status.expiry_date,
+        'expiry_date': expiry_date_str,  # Store as ISO format string
         'status': cert_status.status
     }
 
-    save_ssl_cache(SSL_CACHE)
+    # Log what we're caching
+    logger.debug(f"Caching SSL data for {domain}: days_remaining={cert_status.days_remaining}, " +
+                f"expiry_date={expiry_date_str}, status={cert_status.status}")
+
+    # Cache the data
+    db.set_cache(cache_key, cache_data, SSL_CACHE_EXPIRY)
 
 def check_certificate(domain: str) -> CertificateStatus:
     """Check SSL certificate expiry date using Python's ssl module with caching"""
-    logger.debug(f"Checking SSL certificate for {domain}")
+    logger.info(f"Checking SSL certificate for {domain}")
 
     # Check if we have valid cached data
     cached_data = get_cached_ssl_data(domain)
     if cached_data:
-        logger.debug(f"Using cached SSL data for {domain}")
+        logger.info(f"Using cached SSL data for {domain}: {cached_data}")
 
         # Check ping status (always fresh)
         ping_result = check_ping(domain)
 
-        return CertificateStatus(
-            domain=domain,
-            days_remaining=cached_data['days_remaining'],
-            expiry_date=cached_data['expiry_date'],
-            status=cached_data['status'],
-            ping_status=ping_result["status"]
-        )
+        # Ensure the status is not 'unknown' or 'checking'
+        status = cached_data['status']
+        if status not in ['valid', 'warning', 'expired', 'error']:
+            logger.warning(f"Invalid status '{status}' in cached data for {domain}, forcing a fresh check")
+            # Clear the cache and continue to perform a fresh check
+            db.clear_cache(f"ssl_{domain}")
+        else:
+            # Return the valid cached data
+            return CertificateStatus(
+                domain=domain,
+                days_remaining=cached_data['days_remaining'],
+                expiry_date=cached_data['expiry_date'],
+                status=cached_data['status'],
+                ping_status=ping_result["status"]
+            )
 
     try:
         import ssl
         import socket
         from datetime import datetime
 
+        logger.info(f"Starting SSL check for {domain}")
+
         # Create a context with default verification options
         context = ssl.create_default_context()
 
-        logger.debug(f"Connecting to {domain}:443")
+        logger.info(f"Created SSL context for {domain}")
 
-        # Connect to the server with a shorter timeout
-        with socket.create_connection((domain, 443), timeout=5) as sock:
+        # Connect to the server with a shorter timeout (2 seconds instead of 5)
+        logger.info(f"Attempting to connect to {domain}:443 with 2 second timeout")
+        with socket.create_connection((domain, 443), timeout=2) as sock:
+            logger.info(f"Successfully connected to {domain}:443")
+            # Set a timeout on the SSL handshake as well
+            sock.settimeout(2)
             with context.wrap_socket(sock, server_hostname=domain) as ssock:
+                logger.info(f"Successfully established SSL connection to {domain}")
+
                 # Get the certificate
                 cert = ssock.getpeercert()
+                logger.info(f"Retrieved certificate for {domain}: {cert}")
 
                 # Extract expiry date
                 expiry_date_tuple = cert['notAfter']
+                logger.info(f"Certificate notAfter date: {expiry_date_tuple}")
+
                 # Format: 'May 30 00:00:00 2023 GMT'
                 expiry_date = datetime.strptime(expiry_date_tuple, '%b %d %H:%M:%S %Y %Z')
                 days_remaining = (expiry_date - datetime.now()).days
 
-                logger.debug(f"Certificate for {domain} expires on {expiry_date}, {days_remaining} days remaining")
+                logger.info(f"Certificate for {domain} expires on {expiry_date}, {days_remaining} days remaining")
 
-                # Get settings with safe warning threshold
-                settings = get_email_settings()
+                # Get warning threshold from app settings
+                app_settings = get_app_settings()
 
                 # Ensure warning_threshold_days is an integer
                 try:
-                    warning_threshold = int(settings.warning_threshold_days)
+                    warning_threshold = int(app_settings.warning_threshold_days)
                 except (ValueError, TypeError):
-                    logger.warning(f"Invalid warning_threshold_days: {settings.warning_threshold_days}. Using default value of 10.")
+                    logger.warning(f"Invalid warning_threshold_days: {app_settings.warning_threshold_days}. Using default value of 10.")
                     warning_threshold = 10
 
                 status = 'valid'
@@ -1548,63 +1671,106 @@ def check_certificate(domain: str) -> CertificateStatus:
                     # Send notifications to all enabled platforms
                     if notification_settings.email.get('enabled', False):
                         logger.debug(f"Sending email notification for {domain}")
-                        send_certificate_expiry_notification('email', notification_settings.email, cert_status)
+                        notifications.send_certificate_expiry_notification('email', notification_settings.email, cert_status)
 
                     if notification_settings.teams.get('enabled', False):
                         logger.debug(f"Sending Teams notification for {domain}")
-                        send_certificate_expiry_notification('teams', notification_settings.teams, cert_status)
+                        notifications.send_certificate_expiry_notification('teams', notification_settings.teams, cert_status)
 
                     if notification_settings.slack.get('enabled', False):
                         logger.debug(f"Sending Slack notification for {domain}")
-                        send_certificate_expiry_notification('slack', notification_settings.slack, cert_status)
+                        notifications.send_certificate_expiry_notification('slack', notification_settings.slack, cert_status)
 
                     if notification_settings.discord.get('enabled', False):
                         logger.debug(f"Sending Discord notification for {domain}")
-                        send_certificate_expiry_notification('discord', notification_settings.discord, cert_status)
+                        notifications.send_certificate_expiry_notification('discord', notification_settings.discord, cert_status)
+
+                    if notification_settings.telegram.get('enabled', False):
+                        logger.debug(f"Sending Telegram notification for {domain}")
+                        notifications.send_certificate_expiry_notification('telegram', notification_settings.telegram, cert_status)
+
+                    if notification_settings.webhook.get('enabled', False):
+                        logger.debug(f"Sending Webhook notification for {domain}")
+                        notifications.send_certificate_expiry_notification('webhook', notification_settings.webhook, cert_status)
+
+                    if notification_settings.sms.get('enabled', False):
+                        logger.debug(f"Sending SMS notification for {domain}")
+                        notifications.send_certificate_expiry_notification('sms', notification_settings.sms, cert_status)
 
                 return cert_status
     except ssl.SSLError as e:
-        logger.error(f"SSL Error checking certificate for {domain}: {str(e)}")
+        logger.error(f"SSL Error checking certificate for {domain}: {str(e)}", exc_info=True)
+        logger.info(f"Attempting to ping {domain} after SSL error")
         ping_result = check_ping(domain)
-        return CertificateStatus(
+        logger.info(f"Ping result for {domain} after SSL error: {ping_result}")
+
+        error_status = CertificateStatus(
             domain=domain,
             days_remaining=-1,
             expiry_date=datetime.now(),
             status='error',
             ping_status=ping_result["status"]
         )
+
+        # Cache the error result to prevent repeated failures
+        cache_ssl_data(domain, error_status)
+
+        return error_status
     except socket.gaierror as e:
-        logger.error(f"DNS resolution error for {domain}: {str(e)}")
+        logger.error(f"DNS resolution error for {domain}: {str(e)}", exc_info=True)
+        logger.info(f"Attempting to ping {domain} after DNS error")
         ping_result = check_ping(domain)
-        return CertificateStatus(
+        logger.info(f"Ping result for {domain} after DNS error: {ping_result}")
+
+        error_status = CertificateStatus(
             domain=domain,
             days_remaining=-1,
             expiry_date=datetime.now(),
             status='error',
             ping_status=ping_result["status"]
         )
+
+        # Cache the error result to prevent repeated failures
+        cache_ssl_data(domain, error_status)
+
+        return error_status
     except socket.timeout as e:
-        logger.error(f"Connection timeout for {domain}: {str(e)}")
+        logger.error(f"Connection timeout for {domain}: {str(e)}", exc_info=True)
+        logger.info(f"Attempting to ping {domain} after timeout")
         ping_result = check_ping(domain)
-        return CertificateStatus(
+        logger.info(f"Ping result for {domain} after timeout: {ping_result}")
+
+        error_status = CertificateStatus(
             domain=domain,
             days_remaining=-1,
             expiry_date=datetime.now(),
             status='error',
             ping_status=ping_result["status"]
         )
+
+        # Cache the error result to prevent repeated failures
+        cache_ssl_data(domain, error_status)
+
+        return error_status
     except Exception as e:
-        logger.error(f"Error checking certificate for {domain}: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error checking certificate for {domain}: {str(e)}", exc_info=True)
+        logger.info(f"Attempting to ping {domain} after unexpected error")
         # Even if certificate check fails, try to ping the domain
         ping_result = check_ping(domain)
+        logger.info(f"Ping result for {domain} after unexpected error: {ping_result}")
 
-        return CertificateStatus(
+        error_status = CertificateStatus(
             domain=domain,
             days_remaining=-1,
             expiry_date=datetime.now(),
             status='error',
             ping_status=ping_result["status"]
         )
+
+        # Cache the error result to prevent repeated failures
+        cache_ssl_data(domain, error_status)
+
+        return error_status
 
 def clean_domain_name(domain):
     """Clean a domain name by removing protocol, trailing slashes, and paths"""
@@ -1776,6 +1942,72 @@ def get_recent_alerts(certificates, domains, limit=5):
 def generate_alert_id(alert_type, domain, status):
     """Generate a unique ID for an alert based on its properties"""
     return f"{alert_type.lower()}:{domain}:{status.lower()}"
+
+def get_alert_details(alert_id):
+    """Get details for an alert by its ID"""
+    config = load_config()
+
+    # Get alert details
+    alert_details = None
+
+    # Check SSL certificate alerts
+    for entry in config.get('ssl_domains', []):
+        domain_name = entry.get('url')
+        cert_status = check_certificate(domain_name)
+
+        if cert_status.status in ['warning', 'expired', 'error']:
+            temp_alert_id = generate_alert_id('SSL', domain_name, cert_status.status)
+            if temp_alert_id == alert_id:
+                alert_details = {
+                    'id': alert_id,
+                    'type': 'SSL',
+                    'domain': domain_name,
+                    'status': cert_status.status,
+                    'message': f'SSL certificate for {domain_name} will expire in {cert_status.days_remaining} days' if cert_status.status == 'warning' else
+                              f'SSL certificate for {domain_name} has expired' if cert_status.status == 'expired' else
+                              f'Error checking SSL certificate for {domain_name}'
+                }
+                break
+
+    # If not found, check domain expiry alerts
+    if not alert_details:
+        for entry in config.get('domain_expiry', []):
+            domain_name = entry.get('name')
+            domain_status = check_domain_expiry(domain_name)
+
+            if domain_status.status in ['warning', 'expired', 'error']:
+                temp_alert_id = generate_alert_id('Domain', domain_name, domain_status.status)
+                if temp_alert_id == alert_id:
+                    alert_details = {
+                        'id': alert_id,
+                        'type': 'Domain',
+                        'domain': domain_name,
+                        'status': domain_status.status,
+                        'message': f'Domain {domain_name} will expire in {domain_status.days_remaining} days' if domain_status.status == 'warning' else
+                                  f'Domain {domain_name} has expired' if domain_status.status == 'expired' else
+                                  f'Error checking expiry for domain {domain_name}'
+                    }
+                    break
+
+    # If still not found, check ping alerts
+    if not alert_details:
+        for entry in config.get('ping_hosts', []):
+            domain_name = entry.get('host')
+            ping_result = check_ping(domain_name)
+
+            if ping_result['status'] == 'down':
+                temp_alert_id = generate_alert_id('Ping', domain_name, 'down')
+                if temp_alert_id == alert_id:
+                    alert_details = {
+                        'id': alert_id,
+                        'type': 'Ping',
+                        'domain': domain_name,
+                        'status': 'down',
+                        'message': f'Host {domain_name} is down'
+                    }
+                    break
+
+    return alert_details
 
 @app.route('/alerts')
 @auth.login_required
@@ -2011,44 +2243,25 @@ def acknowledge_alert(alert_id):
                             'id': alert_id,
                             'type': 'Ping',
                             'domain': domain_name,
-                            'status': ping_result['status'],
-                            'message': f'Host {domain_name} is down'
-                        }
-                        break
-
-        if alert_details:
-            config['acknowledged_alerts'].append(alert_id)
-            save_config(config)
-            flash(f"Alert '{alert_details['message']}' acknowledged", 'success')
-        else:
-            flash("Alert not found", 'error')
-
-    return redirect(url_for('alerts'))
-
-@app.route('/health')
-def health_check():
-    return jsonify({'status': 'healthy'}), 200
-                    temp_alert_id = generate_alert_id('Ping', domain_name, 'down')
-                    if temp_alert_id == alert_id:
-                        alert_details = {
-                            'id': alert_id,
-                            'type': 'Ping',
-                            'domain': domain_name,
                             'status': 'down',
                             'message': f'Host {domain_name} is down'
                         }
                         break
 
-        # Add to acknowledged alerts
-        config['acknowledged_alerts'].append(alert_id)
-        save_config(config)
-
-        # Record in alert history
         if alert_details:
+            # Add to acknowledged alerts
+            config['acknowledged_alerts'].append(alert_id)
+            save_config(config)
+
+            # Record in alert history
             import database as db
             current_user = auth.get_current_user()
             user_id = current_user['id'] if current_user else None
             username = current_user['username'] if current_user else 'System'
+
+            # Get current organization
+            current_org = current_user.get('current_organization') if current_user else None
+            organization_id = current_org['id'] if current_org else None
 
             db.add_alert_history(
                 alert_id=alert_id,
@@ -2061,11 +2274,29 @@ def health_check():
                 username=username
             )
 
-        flash('Alert acknowledged successfully', 'success')
-    else:
-        flash('Alert already acknowledged', 'info')
+            # Log the alert acknowledgment action
+            if user_id:
+                db.log_user_action(
+                    user_id=user_id,
+                    username=username,
+                    action_type='acknowledge',
+                    resource_type='alert',
+                    resource_id=alert_id,
+                    resource_name=alert_details['domain'],
+                    details=f"Acknowledged {alert_details['type']} alert: {alert_details['message']}",
+                    ip_address=request.remote_addr,
+                    organization_id=organization_id
+                )
+
+            flash(f"Alert '{alert_details['message']}' acknowledged", 'success')
+        else:
+            flash("Alert not found", 'error')
 
     return redirect(url_for('alerts'))
+
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'healthy'}), 200
 
 @app.route('/unacknowledge_alert/<alert_id>', methods=['POST'])
 def unacknowledge_alert(alert_id):
@@ -2290,6 +2521,160 @@ def acknowledge_all_alerts():
         flash(f'Acknowledged {added_count} alerts', 'success')
     else:
         flash('All selected alerts were already acknowledged', 'info')
+
+    return redirect(url_for('alerts'))
+
+@app.route('/bulk_acknowledge_alerts', methods=['POST'])
+@auth.login_required
+def bulk_acknowledge_alerts():
+    """Acknowledge multiple selected alerts"""
+    alert_ids = request.form.getlist('alert_ids')
+    if not alert_ids:
+        flash('No alerts selected', 'error')
+        return redirect(url_for('alerts'))
+
+    config = load_config()
+    if 'acknowledged_alerts' not in config:
+        config['acknowledged_alerts'] = []
+
+    # Get current user
+    current_user = auth.get_current_user()
+    username = current_user.get('username', 'Unknown')
+    user_id = current_user.get('id')
+
+    # Acknowledge each alert
+    acknowledged_count = 0
+    for alert_id in alert_ids:
+        if alert_id not in config['acknowledged_alerts']:
+            config['acknowledged_alerts'].append(alert_id)
+            acknowledged_count += 1
+
+            # Record in alert history
+            alert_details = get_alert_details(alert_id)
+            if alert_details:
+                db.add_alert_history(
+                    alert_id=alert_id,
+                    domain_name=alert_details.get('domain', 'Unknown'),
+                    alert_type=alert_details.get('type', 'Unknown').lower(),
+                    status=alert_details.get('status', 'Unknown'),
+                    message=alert_details.get('message', 'Unknown'),
+                    action='acknowledged',
+                    user_id=user_id,
+                    username=username
+                )
+
+    # Save config
+    save_config(config)
+
+    if acknowledged_count > 0:
+        flash(f'Successfully acknowledged {acknowledged_count} alert(s)', 'success')
+    else:
+        flash('No alerts were acknowledged', 'info')
+
+    return redirect(url_for('alerts'))
+
+@app.route('/bulk_unacknowledge_alerts', methods=['POST'])
+@auth.login_required
+def bulk_unacknowledge_alerts():
+    """Remove acknowledgment from multiple selected alerts"""
+    alert_ids = request.form.getlist('alert_ids')
+    if not alert_ids:
+        flash('No alerts selected', 'error')
+        return redirect(url_for('alerts'))
+
+    config = load_config()
+    if 'acknowledged_alerts' not in config:
+        flash('No acknowledged alerts found', 'error')
+        return redirect(url_for('alerts'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+    username = current_user.get('username', 'Unknown')
+    user_id = current_user.get('id')
+
+    # Unacknowledge each alert
+    unacknowledged_count = 0
+    for alert_id in alert_ids:
+        if alert_id in config['acknowledged_alerts']:
+            config['acknowledged_alerts'].remove(alert_id)
+            unacknowledged_count += 1
+
+            # Record in alert history
+            alert_details = get_alert_details(alert_id)
+            if alert_details:
+                db.add_alert_history(
+                    alert_id=alert_id,
+                    domain_name=alert_details.get('domain', 'Unknown'),
+                    alert_type=alert_details.get('type', 'Unknown').lower(),
+                    status=alert_details.get('status', 'Unknown'),
+                    message=alert_details.get('message', 'Unknown'),
+                    action='unacknowledged',
+                    user_id=user_id,
+                    username=username
+                )
+
+    # Save config
+    save_config(config)
+
+    if unacknowledged_count > 0:
+        flash(f'Successfully unacknowledged {unacknowledged_count} alert(s)', 'success')
+    else:
+        flash('No alerts were unacknowledged', 'info')
+
+    return redirect(url_for('alerts'))
+
+@app.route('/bulk_delete_alerts', methods=['POST'])
+@auth.login_required
+def bulk_delete_alerts():
+    """Delete multiple selected alerts"""
+    alert_ids = request.form.getlist('alert_ids')
+    if not alert_ids:
+        flash('No alerts selected', 'error')
+        return redirect(url_for('alerts'))
+
+    config = load_config()
+    if 'deleted_alerts' not in config:
+        config['deleted_alerts'] = []
+
+    # Get current user
+    current_user = auth.get_current_user()
+    username = current_user.get('username', 'Unknown')
+    user_id = current_user.get('id')
+
+    # Delete each alert
+    deleted_count = 0
+    for alert_id in alert_ids:
+        # Only delete acknowledged alerts
+        if alert_id in config.get('acknowledged_alerts', []):
+            # Move from acknowledged to deleted
+            if alert_id not in config['deleted_alerts']:
+                config['deleted_alerts'].append(alert_id)
+                deleted_count += 1
+
+                # Remove from acknowledged
+                config['acknowledged_alerts'].remove(alert_id)
+
+                # Record in alert history
+                alert_details = get_alert_details(alert_id)
+                if alert_details:
+                    db.add_alert_history(
+                        alert_id=alert_id,
+                        domain_name=alert_details.get('domain', 'Unknown'),
+                        alert_type=alert_details.get('type', 'Unknown').lower(),
+                        status=alert_details.get('status', 'Unknown'),
+                        message=alert_details.get('message', 'Unknown'),
+                        action='deleted',
+                        user_id=user_id,
+                        username=username
+                    )
+
+    # Save config
+    save_config(config)
+
+    if deleted_count > 0:
+        flash(f'Successfully deleted {deleted_count} alert(s)', 'success')
+    else:
+        flash('No alerts were deleted', 'info')
 
     return redirect(url_for('alerts'))
 
@@ -2683,6 +3068,14 @@ def inject_user():
     except:
         return {'user': None}
 
+# Test alert route
+@app.route('/test_alert')
+@auth.login_required
+def test_alert():
+    """Test page for alert notifications"""
+    user = auth.get_current_user()
+    return render_template('test_alert.html', user=user)
+
 @app.route('/')
 @auth.login_required
 def index():
@@ -2774,12 +3167,18 @@ def index():
 
         # Create uptime segments (12 segments representing the last 12 hours)
         uptime_segments = []
-        if ping_history:
+
+        # For newly added domains, we want to show only the most recent segment as the current status
+        # and all other segments as unknown
+        if len(ping_history) <= 2:  # Changed from 1 to 2 to handle cases with 2 entries
+            # If there's minimal history (0, 1, or 2 entries), use current status only for the most recent segment
+            uptime_segments = ['unknown'] * 11 + [ping_status]
+        else:
             # Group history into 12 hourly segments
             current_time = datetime.now()
-            for i in range(12, 0, -1):
-                segment_start = current_time - timedelta(hours=i)
-                segment_end = current_time - timedelta(hours=i-1)
+            for i in range(12):
+                segment_start = current_time - timedelta(hours=12-i)
+                segment_end = current_time - timedelta(hours=11-i)
 
                 # Find ping entries in this segment
                 segment_entries = [entry for entry in ping_history
@@ -2794,7 +3193,11 @@ def index():
                     else:
                         uptime_segments.append('up')
                 else:
-                    uptime_segments.append('unknown')
+                    # For the most recent segment (last hour), use current status if no data
+                    if i == 11:  # Last segment (most recent hour)
+                        uptime_segments.append(ping_status)
+                    else:
+                        uptime_segments.append('unknown')
 
         # Add domain to the list
         all_domains.append({
@@ -2876,7 +3279,24 @@ def ssl_certificates():
 
     for domain in domains:
         if domain['ssl_monitored']:
+            # Check if this domain was recently added (within the last 10 seconds)
+            # If so, clear the cache to ensure we get fresh data
+            domain_created_at = domain.get('created_at', 0)
+            current_time = time.time()
+
+            if current_time - domain_created_at < 10:  # If domain was created in the last 10 seconds
+                logger.info(f"Clearing cache for newly added domain: {domain['name']}")
+                db.clear_cache(f"ssl_{domain['name']}")
+
+            # Check the certificate
             cert_status = check_certificate(domain['name'])
+
+            # If status is unknown or checking, force a fresh check
+            if cert_status.status not in ['valid', 'warning', 'expired', 'error']:
+                logger.info(f"Forcing fresh check for domain with unknown status: {domain['name']}")
+                db.clear_cache(f"ssl_{domain['name']}")
+                cert_status = check_certificate(domain['name'])
+
             certificates.append(cert_status)
 
     return render_template('ssl_certificates.html', certificates=certificates, user=current_user)
@@ -2945,6 +3365,9 @@ def domain_details(domain_id):
         start_time = time.time()
         logger.debug(f"Starting domain details page load for domain ID {domain_id}")
 
+        # Log the function name to verify it's being called
+        logger.info(f"domain_details function called with domain_id={domain_id}")
+
         # Get current user
         current_user = auth.get_current_user()
 
@@ -2955,7 +3378,7 @@ def domain_details(domain_id):
             return redirect(url_for('profile'))
 
         # Get domain by ID
-        domain = db.get_domain_by_id(domain_id)
+        domain = db.get_domain(domain_id)
         if not domain:
             flash('Domain not found', 'error')
             return redirect(url_for('index'))
@@ -3008,7 +3431,13 @@ def domain_details(domain_id):
 
         # Create uptime segments (12 segments representing the last 12 hours)
         uptime_segments = []
-        if ping_history:
+
+        # For newly added domains, we want to show only the most recent segment as the current status
+        # and all other segments as unknown
+        if len(ping_history) <= 2:  # Changed from 1 to 2 to handle cases with 2 entries
+            # If there's minimal history (0, 1, or 2 entries), use current status only for the most recent segment
+            uptime_segments = ['unknown'] * 11 + [ping_status]
+        else:
             # Group history into 12 hourly segments
             current_time = datetime.now()
 
@@ -3028,11 +3457,11 @@ def domain_details(domain_id):
                     else:
                         uptime_segments.append('up')
                 else:
-                    # No checks in this segment
-                    uptime_segments.append('unknown')
-        else:
-            # If no history, use current status for all segments
-            uptime_segments = [ping_status] * 12
+                    # For the most recent segment (last hour), use current status if no data
+                    if i == 11:  # Last segment (most recent hour)
+                        uptime_segments.append(ping_status)
+                    else:
+                        uptime_segments.append('unknown')
 
         # Get timeframe parameter for the template
         timeframe_hours = request.args.get('timeframe', '24')
@@ -3141,7 +3570,7 @@ def domain_details(domain_id):
 
 @app.route('/add_ssl_domain', methods=['POST'])
 def add_ssl_domain():
-    domain = request.form.get('url')
+    domain = request.form.get('domain')
 
     if not domain:
         flash('Domain name is required', 'error')
@@ -3167,16 +3596,90 @@ def add_ssl_domain():
     if existing_domain:
         # If domain exists, update it to enable SSL monitoring
         db.update_domain(existing_domain['id'], domain, True, existing_domain['expiry_monitored'], existing_domain['ping_monitored'])
+
+        # Log the domain update action
+        db.log_user_action(
+            user_id=current_user['id'],
+            username=current_user['username'],
+            action_type='update',
+            resource_type='domain',
+            resource_id=existing_domain['id'],
+            resource_name=domain,
+            details=f'Updated domain to include SSL monitoring',
+            ip_address=request.remote_addr,
+            organization_id=current_org['id']
+        )
+
         flash(f'Domain {domain} updated to include SSL monitoring', 'success')
     else:
-        # Add new domain with SSL monitoring enabled
-        domain_id = db.add_domain(domain, current_org['id'], True, False, False)
+        # Add new domain with SSL monitoring enabled and auto-logging
+        domain_id = db.add_domain(
+            name=domain,
+            organization_id=current_org['id'],
+            ssl_monitored=True,
+            expiry_monitored=False,
+            ping_monitored=False,
+            user_id=current_user['id'],
+            username=current_user['username'],
+            ip_address=request.remote_addr,
+            auto_log=True
+        )
+
         if domain_id:
-            flash(f'Domain {domain} added successfully for SSL monitoring', 'success')
+            logger.info(f"Successfully added domain {domain} with ID: {domain_id}")
+
+            # Immediately check the SSL certificate status
+            try:
+                logger.info(f"Performing initial SSL certificate check for {domain}")
+                # Clear any existing cache to ensure a fresh check
+                db.clear_cache(f"ssl_{domain}")
+
+                # Force a synchronous check of the certificate and store the result
+                cert_status = check_certificate(domain)
+                logger.info(f"Initial SSL certificate check completed for {domain}: {cert_status.status}")
+
+                # Ensure the result is properly cached
+                cache_ssl_data(domain, cert_status)
+
+                # Record the SSL check in the database
+                try:
+                    db.record_ssl_check(
+                        domain_name=domain,
+                        status=cert_status.status,
+                        expiry_date=cert_status.expiry_date,
+                        issuer="Initial check",
+                        subject=domain
+                    )
+                    logger.info(f"Recorded initial SSL check for {domain} in database")
+                except Exception as record_error:
+                    logger.error(f"Error recording initial SSL check: {str(record_error)}", exc_info=True)
+
+                flash(f'Domain {domain} added successfully for SSL monitoring', 'success')
+            except Exception as e:
+                logger.error(f"Error during initial SSL certificate check for {domain}: {str(e)}", exc_info=True)
+                flash(f'Domain {domain} added successfully, but initial SSL check failed. Please refresh the page.', 'warning')
         else:
+            logger.error(f"Failed to add domain {domain}")
             flash(f'Error adding domain {domain}', 'error')
 
-    return redirect(url_for('ssl_certificates'))
+    # Return a JavaScript response that will refresh the page
+    response = make_response("""
+    <html>
+    <head>
+        <title>Redirecting...</title>
+        <script>
+            // Wait a moment to ensure the certificate check completes
+            setTimeout(function() {
+                window.location.href = '/ssl_certificates';
+            }, 3000);
+        </script>
+    </head>
+    <body>
+        <p>Processing your request... You will be redirected automatically.</p>
+    </body>
+    </html>
+    """)
+    return response
 
 @app.route('/remove_ssl_domain/<domain>')
 def remove_ssl_domain(domain):
@@ -3195,10 +3698,38 @@ def remove_ssl_domain(domain):
         # If domain has other monitoring enabled, just disable SSL monitoring
         if existing_domain['expiry_monitored'] or existing_domain['ping_monitored']:
             db.update_domain(existing_domain['id'], domain, False, existing_domain['expiry_monitored'], existing_domain['ping_monitored'])
+
+            # Log the domain update action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=domain,
+                details=f'Removed domain from SSL monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             flash(f'Domain {domain} removed from SSL monitoring', 'success')
         else:
             # If no other monitoring is enabled, delete the domain
             db.delete_domain(existing_domain['id'])
+
+            # Log the domain deletion action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='delete',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=domain,
+                details=f'Removed domain from all monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             flash(f'Domain {domain} removed from all monitoring', 'success')
     else:
         flash(f'Domain {domain} not found', 'error')
@@ -3230,9 +3761,7 @@ def api_refresh_ssl_certificate(domain):
     """API endpoint to refresh SSL certificate data for a specific domain"""
     try:
         # Clear SSL cache for this domain to force a fresh check
-        if domain in SSL_CACHE:
-            del SSL_CACHE[domain]
-            save_ssl_cache(SSL_CACHE)
+        db.clear_cache(f"ssl_{domain}")
 
         cert_status = check_certificate(domain)
         return jsonify({
@@ -3294,11 +3823,52 @@ def bulk_import_ssl():
             else:
                 skipped_count += 1
         else:
-            # Add new domain with SSL monitoring enabled
-            domain_id = db.add_domain(domain, current_org['id'], True, False, False)
+            # Add new domain with SSL monitoring enabled and auto-logging
+            domain_id = db.add_domain(
+                name=domain,
+                organization_id=current_org['id'],
+                ssl_monitored=True,
+                expiry_monitored=False,
+                ping_monitored=False,
+                user_id=current_user['id'],
+                username=current_user['username'],
+                ip_address=request.remote_addr,
+                auto_log=True
+            )
+
             if domain_id:
+                logger.info(f"Successfully added domain {domain} with ID: {domain_id} (bulk)")
+
+                # Immediately check the SSL certificate status in the background
+                try:
+                    # Clear any existing cache to ensure a fresh check
+                    db.clear_cache(f"ssl_{domain}")
+
+                    # Force a synchronous check of the certificate and store the result
+                    cert_status = check_certificate(domain)
+                    logger.info(f"Initial SSL certificate check completed for {domain} (bulk): {cert_status.status}")
+
+                    # Ensure the result is properly cached
+                    cache_ssl_data(domain, cert_status)
+
+                    # Record the SSL check in the database
+                    try:
+                        db.record_ssl_check(
+                            domain_name=domain,
+                            status=cert_status.status,
+                            expiry_date=cert_status.expiry_date,
+                            issuer="Initial check (bulk)",
+                            subject=domain
+                        )
+                        logger.info(f"Recorded initial SSL check for {domain} (bulk) in database")
+                    except Exception as record_error:
+                        logger.error(f"Error recording initial SSL check for bulk import: {str(record_error)}", exc_info=True)
+                except Exception as e:
+                    logger.error(f"Error during initial SSL certificate check for {domain} (bulk): {str(e)}", exc_info=True)
+
                 added_count += 1
             else:
+                logger.error(f"Failed to add domain {domain} (bulk)")
                 skipped_count += 1
 
     if added_count > 0 or updated_count > 0:
@@ -3314,7 +3884,24 @@ def bulk_import_ssl():
     else:
         flash(f'No domains added or updated, skipped {skipped_count} domains', 'warning')
 
-    return redirect(url_for('ssl_certificates'))
+    # Return a JavaScript response that will refresh the page
+    response = make_response("""
+    <html>
+    <head>
+        <title>Redirecting...</title>
+        <script>
+            // Wait a moment to ensure the certificate checks complete
+            setTimeout(function() {
+                window.location.href = '/ssl_certificates';
+            }, 5000);
+        </script>
+    </head>
+    <body>
+        <p>Processing your request... You will be redirected automatically.</p>
+    </body>
+    </html>
+    """)
+    return response
 
 @app.route('/export_ssl_domains')
 def export_ssl_domains():
@@ -3339,6 +3926,122 @@ def export_ssl_domains():
     )
     response.headers["Content-Disposition"] = "attachment; filename=ssl_domains.txt"
     return response
+
+@app.route('/bulk_refresh_ssl', methods=['POST'])
+@auth.login_required
+def bulk_refresh_ssl():
+    """Refresh SSL certificate information for multiple domains"""
+    domains = request.form.getlist('domains')
+
+    if not domains:
+        flash('No domains selected', 'error')
+        return redirect(url_for('ssl_certificates'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+
+    # Get current organization
+    current_org = current_user.get('current_organization')
+    if not current_org:
+        flash("You don't have access to any organizations", 'error')
+        return redirect(url_for('profile'))
+
+    # Refresh SSL certificate information for each domain
+    success_count = 0
+    error_count = 0
+
+    for domain in domains:
+        try:
+            # Check if domain belongs to current organization
+            domain_obj = db.get_domain_by_name_and_org(domain, current_org['id'])
+            if not domain_obj:
+                error_count += 1
+                continue
+
+            # Refresh SSL certificate information
+            # Use the same function that's used for individual domain refresh
+            ssl_status = check_certificate(domain)
+            if ssl_status and hasattr(ssl_status, 'status'):
+                success_count += 1
+            else:
+                error_count += 1
+        except Exception as e:
+            logger.error(f"Error refreshing SSL certificate for {domain}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully refreshed SSL certificate information for {success_count} domain(s)', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to refresh SSL certificate information for {error_count} domain(s)', 'error')
+
+    return redirect(url_for('ssl_certificates'))
+
+@app.route('/bulk_delete_ssl', methods=['POST'])
+@auth.login_required
+def bulk_delete_ssl():
+    """Remove multiple domains from SSL certificate monitoring"""
+    domains = request.form.getlist('domains')
+
+    if not domains:
+        flash('No domains selected', 'error')
+        return redirect(url_for('ssl_certificates'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+
+    # Get current organization
+    current_org = current_user.get('current_organization')
+    if not current_org:
+        flash("You don't have access to any organizations", 'error')
+        return redirect(url_for('profile'))
+
+    # Remove domains from SSL monitoring
+    success_count = 0
+    error_count = 0
+
+    for domain in domains:
+        try:
+            # Check if domain belongs to current organization
+            domain_obj = db.get_domain_by_name_and_org(domain, current_org['id'])
+            if not domain_obj:
+                error_count += 1
+                continue
+
+            # Update domain to disable SSL monitoring
+            db.update_domain(
+                domain_obj['id'],
+                domain,
+                False,  # ssl_monitored = False
+                domain_obj['expiry_monitored'],
+                domain_obj['ping_monitored']
+            )
+
+            # Log the domain update action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='domain',
+                resource_id=domain_obj['id'],
+                resource_name=domain,
+                details=f'Removed domain from SSL monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Error removing SSL monitoring for {domain}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully removed {success_count} domain(s) from SSL monitoring', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to remove {error_count} domain(s) from SSL monitoring', 'error')
+
+    return redirect(url_for('ssl_certificates'))
 
 @app.route('/add_expiry_domain', methods=['POST'])
 def add_expiry_domain():
@@ -3368,13 +4071,52 @@ def add_expiry_domain():
     if existing_domain:
         # If domain exists, update it to enable expiry monitoring
         db.update_domain(existing_domain['id'], domain, existing_domain['ssl_monitored'], True, existing_domain['ping_monitored'])
+
+        # Log the domain update action
+        db.log_user_action(
+            user_id=current_user['id'],
+            username=current_user['username'],
+            action_type='update',
+            resource_type='domain',
+            resource_id=existing_domain['id'],
+            resource_name=domain,
+            details=f'Updated domain to include expiry monitoring',
+            ip_address=request.remote_addr,
+            organization_id=current_org['id']
+        )
+
         flash(f'Domain {domain} updated to include expiry monitoring', 'success')
     else:
-        # Add new domain with expiry monitoring enabled
-        domain_id = db.add_domain(domain, current_org['id'], False, True, False)
+        # Add new domain with expiry monitoring enabled and auto-logging
+        domain_id = db.add_domain(
+            name=domain,
+            organization_id=current_org['id'],
+            ssl_monitored=False,
+            expiry_monitored=True,
+            ping_monitored=False,
+            user_id=current_user['id'],
+            username=current_user['username'],
+            ip_address=request.remote_addr,
+            auto_log=True
+        )
+
         if domain_id:
-            flash(f'Domain {domain} added successfully for expiry monitoring', 'success')
+            logger.info(f"Successfully added domain {domain} with ID: {domain_id}")
+
+            # Immediately check the domain expiry status
+            try:
+                logger.info(f"Performing initial domain expiry check for {domain}")
+                # Clear any existing cache to ensure a fresh check
+                db.clear_cache(f"domain_expiry_{domain}")
+                # Check the domain expiry
+                check_domain_expiry(domain)
+                logger.info(f"Initial domain expiry check completed for {domain}")
+                flash(f'Domain {domain} added successfully for expiry monitoring', 'success')
+            except Exception as e:
+                logger.error(f"Error during initial domain expiry check for {domain}: {str(e)}", exc_info=True)
+                flash(f'Domain {domain} added successfully, but initial expiry check failed. Please refresh the page.', 'warning')
         else:
+            logger.error(f"Failed to add domain {domain}")
             flash(f'Error adding domain {domain}', 'error')
 
     return redirect(url_for('domain_expiry'))
@@ -3396,10 +4138,38 @@ def remove_expiry_domain(domain):
         # If domain has other monitoring enabled, just disable expiry monitoring
         if existing_domain['ssl_monitored'] or existing_domain['ping_monitored']:
             db.update_domain(existing_domain['id'], domain, existing_domain['ssl_monitored'], False, existing_domain['ping_monitored'])
+
+            # Log the domain update action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=domain,
+                details=f'Removed domain from expiry monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             flash(f'Domain {domain} removed from expiry monitoring', 'success')
         else:
             # If no other monitoring is enabled, delete the domain
             db.delete_domain(existing_domain['id'])
+
+            # Log the domain deletion action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='delete',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=domain,
+                details=f'Removed domain from all monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             flash(f'Domain {domain} removed from all monitoring', 'success')
     else:
         flash(f'Domain {domain} not found', 'error')
@@ -3411,9 +4181,7 @@ def api_refresh_domain_expiry(domain):
     """API endpoint to refresh domain expiry data for a specific domain"""
     try:
         # Clear domain expiry cache for this domain to force a fresh check
-        if domain in DOMAIN_EXPIRY_CACHE:
-            del DOMAIN_EXPIRY_CACHE[domain]
-            save_domain_expiry_cache(DOMAIN_EXPIRY_CACHE)
+        db.clear_cache(f"domain_expiry_{domain}")
 
         domain_status = check_domain_expiry(domain)
         return jsonify({
@@ -3431,6 +4199,123 @@ def api_refresh_domain_expiry(domain):
             'success': False,
             'error': f"Error refreshing domain expiry: {str(e)}"
         }), 500
+
+
+
+@app.route('/bulk_refresh_expiry', methods=['POST'])
+@auth.login_required
+def bulk_refresh_expiry():
+    """Refresh domain expiry information for multiple domains"""
+    domains = request.form.getlist('domains')
+
+    if not domains:
+        flash('No domains selected', 'error')
+        return redirect(url_for('domain_expiry'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+
+    # Get current organization
+    current_org = current_user.get('current_organization')
+    if not current_org:
+        flash("You don't have access to any organizations", 'error')
+        return redirect(url_for('profile'))
+
+    # Refresh domain expiry information for each domain
+    success_count = 0
+    error_count = 0
+
+    for domain in domains:
+        try:
+            # Check if domain belongs to current organization
+            domain_obj = db.get_domain_by_name_and_org(domain, current_org['id'])
+            if not domain_obj:
+                error_count += 1
+                continue
+
+            # Refresh domain expiry information
+            domain_status = check_domain_expiry(domain)
+            if domain_status:
+                success_count += 1
+            else:
+                error_count += 1
+        except Exception as e:
+            logger.error(f"Error refreshing domain expiry for {domain}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully refreshed domain expiry information for {success_count} domain(s)', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to refresh domain expiry information for {error_count} domain(s)', 'error')
+
+    return redirect(url_for('domain_expiry'))
+
+@app.route('/bulk_delete_expiry', methods=['POST'])
+@auth.login_required
+def bulk_delete_expiry():
+    """Remove multiple domains from domain expiry monitoring"""
+    domains = request.form.getlist('domains')
+
+    if not domains:
+        flash('No domains selected', 'error')
+        return redirect(url_for('domain_expiry'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+
+    # Get current organization
+    current_org = current_user.get('current_organization')
+    if not current_org:
+        flash("You don't have access to any organizations", 'error')
+        return redirect(url_for('profile'))
+
+    # Remove domains from expiry monitoring
+    success_count = 0
+    error_count = 0
+
+    for domain in domains:
+        try:
+            # Check if domain belongs to current organization
+            domain_obj = db.get_domain_by_name_and_org(domain, current_org['id'])
+            if not domain_obj:
+                error_count += 1
+                continue
+
+            # Update domain to disable expiry monitoring
+            db.update_domain(
+                domain_obj['id'],
+                domain,
+                domain_obj['ssl_monitored'],
+                False,  # expiry_monitored = False
+                domain_obj['ping_monitored']
+            )
+
+            # Log the domain update action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='domain',
+                resource_id=domain_obj['id'],
+                resource_name=domain,
+                details=f'Removed domain from expiry monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Error removing expiry monitoring for {domain}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully removed {success_count} domain(s) from expiry monitoring', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to remove {error_count} domain(s) from expiry monitoring', 'error')
+
+    return redirect(url_for('domain_expiry'))
 
 @app.route('/bulk_import_expiry', methods=['POST'])
 def bulk_import_expiry():
@@ -3476,11 +4361,35 @@ def bulk_import_expiry():
             else:
                 skipped_count += 1
         else:
-            # Add new domain with expiry monitoring enabled
-            domain_id = db.add_domain(domain, current_org['id'], False, True, False)
+            # Add new domain with expiry monitoring enabled and auto-logging
+            domain_id = db.add_domain(
+                name=domain,
+                organization_id=current_org['id'],
+                ssl_monitored=False,
+                expiry_monitored=True,
+                ping_monitored=False,
+                user_id=current_user['id'],
+                username=current_user['username'],
+                ip_address=request.remote_addr,
+                auto_log=True
+            )
+
             if domain_id:
+                logger.info(f"Successfully added domain {domain} with ID: {domain_id} (bulk expiry)")
+
+                # Immediately check the domain expiry status in the background
+                try:
+                    # Clear any existing cache to ensure a fresh check
+                    db.clear_cache(f"domain_expiry_{domain}")
+                    # Check the domain expiry (this will cache the result)
+                    check_domain_expiry(domain)
+                    logger.info(f"Initial domain expiry check completed for {domain} (bulk)")
+                except Exception as e:
+                    logger.error(f"Error during initial domain expiry check for {domain} (bulk): {str(e)}", exc_info=True)
+
                 added_count += 1
             else:
+                logger.error(f"Failed to add domain {domain} (bulk expiry)")
                 skipped_count += 1
 
     if added_count > 0 or updated_count > 0:
@@ -3550,13 +4459,50 @@ def add_ping_host():
     if existing_domain:
         # If domain exists, update it to enable ping monitoring
         db.update_domain(existing_domain['id'], host, existing_domain['ssl_monitored'], existing_domain['expiry_monitored'], True)
+
+        # Log the domain update action
+        db.log_user_action(
+            user_id=current_user['id'],
+            username=current_user['username'],
+            action_type='update',
+            resource_type='domain',
+            resource_id=existing_domain['id'],
+            resource_name=host,
+            details=f'Updated host to include ping monitoring',
+            ip_address=request.remote_addr,
+            organization_id=current_org['id']
+        )
+
         flash(f'Host {host} updated to include ping monitoring', 'success')
     else:
-        # Add new domain with ping monitoring enabled
-        domain_id = db.add_domain(host, current_org['id'], False, False, True)
+        # Add new domain with ping monitoring enabled and auto-logging
+        domain_id = db.add_domain(
+            name=host,
+            organization_id=current_org['id'],
+            ssl_monitored=False,
+            expiry_monitored=False,
+            ping_monitored=True,
+            user_id=current_user['id'],
+            username=current_user['username'],
+            ip_address=request.remote_addr,
+            auto_log=True
+        )
+
         if domain_id:
-            flash(f'Host {host} added successfully for ping monitoring', 'success')
+            logger.info(f"Successfully added host {host} with ID: {domain_id}")
+
+            # Immediately check the ping status
+            try:
+                logger.info(f"Performing initial ping check for {host}")
+                # Check the ping status
+                ping_result = check_ping(host)
+                logger.info(f"Initial ping check completed for {host}: {ping_result['status']}")
+                flash(f'Host {host} added successfully for ping monitoring', 'success')
+            except Exception as e:
+                logger.error(f"Error during initial ping check for {host}: {str(e)}", exc_info=True)
+                flash(f'Host {host} added successfully, but initial ping check failed. Please refresh the page.', 'warning')
         else:
+            logger.error(f"Failed to add host {host}")
             flash(f'Error adding host {host}', 'error')
 
     return redirect(url_for('ping_monitoring'))
@@ -3578,10 +4524,38 @@ def remove_ping_host(host):
         # If domain has other monitoring enabled, just disable ping monitoring
         if existing_domain['ssl_monitored'] or existing_domain['expiry_monitored']:
             db.update_domain(existing_domain['id'], host, existing_domain['ssl_monitored'], existing_domain['expiry_monitored'], False)
+
+            # Log the domain update action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=host,
+                details=f'Removed host from ping monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             flash(f'Host {host} removed from ping monitoring', 'success')
         else:
             # If no other monitoring is enabled, delete the domain
             db.delete_domain(existing_domain['id'])
+
+            # Log the domain deletion action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='delete',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=host,
+                details=f'Removed host from all monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             flash(f'Host {host} removed from all monitoring', 'success')
     else:
         flash(f'Host {host} not found', 'error')
@@ -3593,9 +4567,7 @@ def api_refresh_ping_host(host):
     """API endpoint to refresh ping status for a specific host"""
     try:
         # Clear ping cache for this host to force a fresh check
-        if host in PING_CACHE:
-            del PING_CACHE[host]
-            save_ping_cache(PING_CACHE)
+        db.clear_cache(f"ping_{host}")
 
         ping_result = check_ping(host)
 
@@ -3632,8 +4604,8 @@ def api_refresh_ping_host(host):
                     # No checks in this segment
                     uptime_segments.append('unknown')
         else:
-            # If no history, use current status for all segments
-            uptime_segments = [ping_result["status"]] * 12
+            # If no history, use current status only for the most recent segment (last hour)
+            uptime_segments = ['unknown'] * 11 + [ping_result["status"]]
 
         # Get response history from config
         config = load_config()
@@ -3677,6 +4649,123 @@ def api_refresh_ping_host(host):
             'error': f"Error refreshing ping status: {str(e)}"
         }), 500
 
+
+
+@app.route('/bulk_refresh_ping', methods=['POST'])
+@auth.login_required
+def bulk_refresh_ping():
+    """Refresh ping status for multiple hosts"""
+    hosts = request.form.getlist('hosts')
+
+    if not hosts:
+        flash('No hosts selected', 'error')
+        return redirect(url_for('ping_monitoring'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+
+    # Get current organization
+    current_org = current_user.get('current_organization')
+    if not current_org:
+        flash("You don't have access to any organizations", 'error')
+        return redirect(url_for('profile'))
+
+    # Refresh ping status for each host
+    success_count = 0
+    error_count = 0
+
+    for host in hosts:
+        try:
+            # Check if host belongs to current organization
+            host_obj = db.get_ping_host_by_name_and_org(host, current_org['id'])
+            if not host_obj:
+                error_count += 1
+                continue
+
+            # Refresh ping status
+            ping_result = check_ping(host)
+            if ping_result:
+                success_count += 1
+            else:
+                error_count += 1
+        except Exception as e:
+            logger.error(f"Error refreshing ping status for {host}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully refreshed ping status for {success_count} host(s)', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to refresh ping status for {error_count} host(s)', 'error')
+
+    return redirect(url_for('ping_monitoring'))
+
+@app.route('/bulk_delete_ping', methods=['POST'])
+@auth.login_required
+def bulk_delete_ping():
+    """Remove multiple hosts from ping monitoring"""
+    hosts = request.form.getlist('hosts')
+
+    if not hosts:
+        flash('No hosts selected', 'error')
+        return redirect(url_for('ping_monitoring'))
+
+    # Get current user
+    current_user = auth.get_current_user()
+
+    # Get current organization
+    current_org = current_user.get('current_organization')
+    if not current_org:
+        flash("You don't have access to any organizations", 'error')
+        return redirect(url_for('profile'))
+
+    # Remove hosts from ping monitoring
+    success_count = 0
+    error_count = 0
+
+    for host in hosts:
+        try:
+            # Check if host belongs to current organization
+            host_obj = db.get_domain_by_name_and_org(host, current_org['id'])
+            if not host_obj:
+                error_count += 1
+                continue
+
+            # Update domain to disable ping monitoring
+            db.update_domain(
+                host_obj['id'],
+                host,
+                host_obj['ssl_monitored'],
+                host_obj['expiry_monitored'],
+                False  # ping_monitored = False
+            )
+
+            # Log the domain update action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='domain',
+                resource_id=host_obj['id'],
+                resource_name=host,
+                details=f'Removed host from ping monitoring',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Error removing ping monitoring for {host}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully removed {success_count} host(s) from ping monitoring', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to remove {error_count} host(s) from ping monitoring', 'error')
+
+    return redirect(url_for('ping_monitoring'))
+
 @app.route('/bulk_import_ping', methods=['POST'])
 def bulk_import_ping():
     hosts_text = request.form.get('hosts')
@@ -3717,15 +4806,51 @@ def bulk_import_ping():
             # If domain exists and ping monitoring is not enabled, update it
             if not existing_domain['ping_monitored']:
                 db.update_domain(existing_domain['id'], host, existing_domain['ssl_monitored'], existing_domain['expiry_monitored'], True)
+
+                # Log the domain update action
+                db.log_user_action(
+                    user_id=current_user['id'],
+                    username=current_user['username'],
+                    action_type='update',
+                    resource_type='domain',
+                    resource_id=existing_domain['id'],
+                    resource_name=host,
+                    details=f'Updated host to enable ping monitoring',
+                    ip_address=request.remote_addr,
+                    organization_id=current_org['id']
+                )
+
                 updated_count += 1
             else:
                 skipped_count += 1
         else:
-            # Add new domain with ping monitoring enabled
-            domain_id = db.add_domain(host, current_org['id'], False, False, True)
+            # Add new domain with ping monitoring enabled and auto-logging
+            domain_id = db.add_domain(
+                name=host,
+                organization_id=current_org['id'],
+                ssl_monitored=False,
+                expiry_monitored=False,
+                ping_monitored=True,
+                user_id=current_user['id'],
+                username=current_user['username'],
+                ip_address=request.remote_addr,
+                auto_log=True
+            )
+
             if domain_id:
+                logger.info(f"Successfully added host {host} with ID: {domain_id} (bulk ping)")
+
+                # Immediately check the ping status in the background
+                try:
+                    # Check the ping status
+                    ping_result = check_ping(host)
+                    logger.info(f"Initial ping check completed for {host} (bulk): {ping_result['status']}")
+                except Exception as e:
+                    logger.error(f"Error during initial ping check for {host} (bulk): {str(e)}", exc_info=True)
+
                 added_count += 1
             else:
+                logger.error(f"Failed to add host {host} (bulk ping)")
                 skipped_count += 1
 
     if added_count > 0 or updated_count > 0:
@@ -3864,6 +4989,10 @@ def app_settings():
             config['app_settings']['auto_refresh_interval'] = auto_refresh_interval
             config['app_settings']['timezone'] = timezone
 
+            # Also update the email notification settings to use the same warning threshold
+            if 'notifications' in config and 'email' in config['notifications']:
+                config['notifications']['email']['warning_threshold_days'] = warning_threshold
+
             # Get WHOIS API key
             whois_api_key = request.form.get('whois_api_key', '').strip()
 
@@ -3980,9 +5109,8 @@ def clear_whois_cache():
         # Clear all WHOIS cache entries from database
         db.clear_cache_by_prefix('whois_')
 
-        # Clear domain expiry cache
-        global DOMAIN_EXPIRY_CACHE
-        DOMAIN_EXPIRY_CACHE = {}
+        # Clear domain expiry cache from database
+        db.clear_cache_by_prefix('domain_expiry_')
 
         # Remove the cache file if it exists
         cache_file = os.path.join(DATA_DIR, "domain_expiry_cache.json")
@@ -4003,6 +5131,32 @@ def clear_whois_cache():
         flash(f'Error clearing caches: {str(e)}', 'error')
 
     return redirect(url_for('app_settings'))
+
+@app.route('/clear_ssl_cache/<domain>')
+@auth.login_required
+def clear_ssl_cache(domain):
+    """Clear the SSL cache for a specific domain"""
+    try:
+        # Clear SSL cache for this domain
+        cache_key = f"ssl_{domain}"
+        db.clear_cache(cache_key)
+        logger.info(f"SSL cache cleared for domain: {domain}")
+
+        # Force a fresh check
+        cert_status = check_certificate(domain)
+        logger.info(f"Fresh SSL check for {domain} after clearing cache: {cert_status.status}")
+
+        flash(f'SSL cache for {domain} cleared successfully. New status: {cert_status.status}', 'success')
+    except Exception as e:
+        logger.error(f"Error clearing SSL cache for {domain}: {str(e)}", exc_info=True)
+        flash(f'Error clearing SSL cache: {str(e)}', 'error')
+
+    # Redirect back to the referring page or to the SSL certificates page
+    referrer = request.referrer
+    if referrer:
+        return redirect(referrer)
+    else:
+        return redirect(url_for('ssl_certificates'))
 
 @app.route('/test_whois_api')
 @auth.login_required
@@ -4632,15 +5786,194 @@ def export_report_csv(report_data):
 
 def export_report_excel(report_data):
     """Export report as Excel file"""
-    # For simplicity, we'll just return the CSV for now
-    # In a real implementation, this would use a library like openpyxl to create Excel files
-    return export_report_csv(report_data)
+    # Use openpyxl to create an Excel file
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+
+    # Create a new workbook and select the active worksheet
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Report"
+
+    # Set column widths
+    ws.column_dimensions['A'].width = 25
+    ws.column_dimensions['B'].width = 15
+
+    # Add title
+    ws['A1'] = 'Report: ' + report_data['title']
+    ws['A1'].font = Font(bold=True, size=14)
+    ws.merge_cells('A1:B1')
+
+    # Add generation timestamp
+    ws['A2'] = 'Generated: ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ws.merge_cells('A2:B2')
+
+    # Add summary header
+    ws['A4'] = 'Summary'
+    ws['A4'].font = Font(bold=True)
+
+    # Add summary data
+    ws['A5'] = 'Total Domains'
+    ws['B5'] = report_data['summary']['total']
+
+    ws['A6'] = 'Healthy'
+    ws['B6'] = report_data['summary']['healthy']
+
+    ws['A7'] = 'Warning'
+    ws['B7'] = report_data['summary']['warning']
+
+    ws['A8'] = 'Critical'
+    ws['B8'] = report_data['summary']['critical']
+
+    # Add table data if available
+    if report_data['table']:
+        # Add a header row for the table
+        row_num = 10
+        ws['A' + str(row_num)] = 'Detailed Data'
+        ws['A' + str(row_num)].font = Font(bold=True)
+        ws.merge_cells(f'A{row_num}:B{row_num}')
+        row_num += 1
+
+        # Get the keys from the first row as headers
+        headers = list(report_data['table'][0].keys())
+
+        # Write headers
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = header
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+
+        # Write data rows
+        for row_data in report_data['table']:
+            row_num += 1
+            for col_num, key in enumerate(headers, 1):
+                ws.cell(row=row_num, column=col_num).value = row_data.get(key, '')
+
+    # Save to a BytesIO object
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # Create response
+    filename = f"{report_data['title'].replace(' ', '_')}.xlsx"
+    return Response(
+        output.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
 
 def export_report_pdf(report_data):
     """Export report as PDF file"""
-    # For simplicity, we'll just return the CSV for now
-    # In a real implementation, this would use a library like ReportLab or WeasyPrint to create PDF files
-    return export_report_csv(report_data)
+    # Use reportlab to create a PDF file
+    import io
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    # Create a buffer for the PDF
+    buffer = io.BytesIO()
+
+    # Create the PDF document
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+
+    # Create custom styles
+    title_style = ParagraphStyle(
+        'Title',
+        parent=styles['Heading1'],
+        fontSize=16,
+        spaceAfter=12
+    )
+
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=10
+    )
+
+    normal_style = styles['Normal']
+
+    # Create the content elements
+    elements = []
+
+    # Add title
+    elements.append(Paragraph(f"Report: {report_data['title']}", title_style))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+    elements.append(Spacer(1, 12))
+
+    # Add summary
+    elements.append(Paragraph("Summary", subtitle_style))
+
+    summary_data = [
+        ["Total Domains", str(report_data['summary']['total'])],
+        ["Healthy", str(report_data['summary']['healthy'])],
+        ["Warning", str(report_data['summary']['warning'])],
+        ["Critical", str(report_data['summary']['critical'])]
+    ]
+
+    summary_table = Table(summary_data, colWidths=[200, 100])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+
+    elements.append(summary_table)
+    elements.append(Spacer(1, 12))
+
+    # Add table data if available
+    if report_data['table']:
+        elements.append(Paragraph("Detailed Data", subtitle_style))
+
+        # Get headers from the first row
+        headers = list(report_data['table'][0].keys())
+
+        # Prepare table data
+        table_data = [headers]  # First row is headers
+
+        # Add data rows
+        for row in report_data['table']:
+            table_data.append([str(row.get(key, '')) for key in headers])
+
+        # Create the table
+        col_widths = [100] * len(headers)  # Adjust column widths as needed
+        detail_table = Table(table_data, colWidths=col_widths)
+
+        # Style the table
+        table_style = [
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]
+        detail_table.setStyle(TableStyle(table_style))
+
+        elements.append(detail_table)
+
+    # Build the PDF
+    doc.build(elements)
+
+    # Get the value from the buffer
+    buffer.seek(0)
+
+    # Create response
+    filename = f"{report_data['title'].replace(' ', '_')}.pdf"
+    return Response(
+        buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
 
 @app.route('/restore_config', methods=['POST'])
 def restore_config():
@@ -4831,8 +6164,18 @@ def add_domain_from_dashboard():
             else:
                 flash(f'Error updating domain {domain}', 'error')
         else:
-            # Add new domain with selected monitoring options
-            domain_id = db.add_domain(domain, current_org['id'], monitor_ssl, monitor_expiry, monitor_ping)
+            # Add new domain with selected monitoring options and auto-logging
+            domain_id = db.add_domain(
+                name=domain,
+                organization_id=current_org['id'],
+                ssl_monitored=monitor_ssl,
+                expiry_monitored=monitor_expiry,
+                ping_monitored=monitor_ping,
+                user_id=current_user['id'],
+                username=current_user['username'],
+                ip_address=request.remote_addr,
+                auto_log=True
+            )
             if domain_id:
                 # Update the configuration file
                 config_updated = False
@@ -4851,16 +6194,23 @@ def add_domain_from_dashboard():
                         config['ssl_domains'].append({'url': domain})
                         config_updated = True
 
-                        # Force an immediate check to populate the SSL cache
-                        try:
-                            # Clear any existing cache entry
-                            if domain in SSL_CACHE:
-                                del SSL_CACHE[domain]
+                        # Pre-cache an error status to prevent initial slow loading
+                        # This will be updated in the background
+                        error_status = CertificateStatus(
+                            domain=domain,
+                            days_remaining=-1,
+                            expiry_date=datetime.now(),
+                            status='checking',  # Use 'checking' status to indicate it's being processed
+                            ping_status='unknown'
+                        )
+                        cache_ssl_data(domain, error_status)
 
-                            # Perform a check to populate the cache
-                            check_certificate(domain)
-                        except Exception as e:
-                            logger.error(f"Error checking SSL for {domain}: {str(e)}")
+                        # Start a background thread to check the certificate
+                        threading.Thread(
+                            target=lambda d: check_certificate(d),
+                            args=(domain,),
+                            daemon=True
+                        ).start()
 
                 # Add to domain expiry monitoring
                 if monitor_expiry:
@@ -4879,8 +6229,7 @@ def add_domain_from_dashboard():
                         # Force an immediate check to populate the domain expiry cache
                         try:
                             # Clear any existing cache entry
-                            if domain in DOMAIN_EXPIRY_CACHE:
-                                del DOMAIN_EXPIRY_CACHE[domain]
+                            db.clear_cache(f"domain_expiry_{domain}")
 
                             # Perform a check to populate the cache
                             check_domain_expiry(domain)
@@ -4904,8 +6253,7 @@ def add_domain_from_dashboard():
                         # Force an immediate ping check
                         try:
                             # Clear any existing cache entry
-                            if domain in PING_CACHE:
-                                del PING_CACHE[domain]
+                            db.clear_cache(f"ping_{domain}")
 
                             # Perform a check to populate the cache
                             check_ping(domain)
@@ -5005,6 +6353,27 @@ def bulk_add_domains_from_dashboard():
                     monitor_ping or existing_domain['ping_monitored']
                 )
                 if updated:
+                    # Log the domain update action
+                    monitoring_types_str = []
+                    if monitor_ssl and not existing_domain['ssl_monitored']:
+                        monitoring_types_str.append("SSL")
+                    if monitor_expiry and not existing_domain['expiry_monitored']:
+                        monitoring_types_str.append("expiry")
+                    if monitor_ping and not existing_domain['ping_monitored']:
+                        monitoring_types_str.append("ping")
+
+                    if monitoring_types_str:  # Only log if something was actually updated
+                        db.log_user_action(
+                            user_id=current_user['id'],
+                            username=current_user['username'],
+                            action_type='update',
+                            resource_type='domain',
+                            resource_id=existing_domain['id'],
+                            resource_name=domain,
+                            details=f'Updated domain to add {", ".join(monitoring_types_str)} monitoring (bulk dashboard)',
+                            ip_address=request.remote_addr,
+                            organization_id=current_org['id']
+                        )
                     updated_count += 1
 
                     # Update SSL monitoring in config
@@ -5021,9 +6390,28 @@ def bulk_add_domains_from_dashboard():
                 else:
                     skipped_count += 1
             else:
-                # Add new domain with selected monitoring options
-                domain_id = db.add_domain(domain, current_org['id'], monitor_ssl, monitor_expiry, monitor_ping)
+                # Add new domain with selected monitoring options and auto-logging
+                domain_id = db.add_domain(
+                    name=domain,
+                    organization_id=current_org['id'],
+                    ssl_monitored=monitor_ssl,
+                    expiry_monitored=monitor_expiry,
+                    ping_monitored=monitor_ping,
+                    user_id=current_user['id'],
+                    username=current_user['username'],
+                    ip_address=request.remote_addr,
+                    auto_log=True
+                )
                 if domain_id:
+                    # The log entry is now created automatically by add_domain
+                    # Add to monitoring types for the flash message
+                    monitoring_types_str = []
+                    if monitor_ssl:
+                        monitoring_types_str.append("SSL")
+                    if monitor_expiry:
+                        monitoring_types_str.append("expiry")
+                    if monitor_ping:
+                        monitoring_types_str.append("ping")
                     added_count += 1
 
                     # Add to config lists
@@ -5042,8 +6430,7 @@ def bulk_add_domains_from_dashboard():
                             # Force an immediate check to populate the SSL cache
                             try:
                                 # Clear any existing cache entry
-                                if domain in SSL_CACHE:
-                                    del SSL_CACHE[domain]
+                                db.clear_cache(f"ssl_{domain}")
 
                                 # Perform a check to populate the cache
                                 check_certificate(domain)
@@ -5065,8 +6452,7 @@ def bulk_add_domains_from_dashboard():
                             # Force an immediate check to populate the domain expiry cache
                             try:
                                 # Clear any existing cache entry
-                                if domain in DOMAIN_EXPIRY_CACHE:
-                                    del DOMAIN_EXPIRY_CACHE[domain]
+                                db.clear_cache(f"domain_expiry_{domain}")
 
                                 # Perform a check to populate the cache
                                 check_domain_expiry(domain)
@@ -5088,8 +6474,7 @@ def bulk_add_domains_from_dashboard():
                             # Force an immediate ping check
                             try:
                                 # Clear any existing cache entry
-                                if domain in PING_CACHE:
-                                    del PING_CACHE[domain]
+                                db.clear_cache(f"ping_{domain}")
 
                                 # Perform a check to populate the cache
                                 check_ping(domain)
@@ -5202,8 +6587,18 @@ def add_ping_from_dashboard():
             else:
                 flash(f'Host {host} is already being monitored for ping', 'error')
         else:
-            # Add new domain with ping monitoring enabled
-            domain_id = db.add_domain(host, current_org['id'], False, False, True)
+            # Add new domain with ping monitoring enabled and auto-logging
+            domain_id = db.add_domain(
+                name=host,
+                organization_id=current_org['id'],
+                ssl_monitored=False,
+                expiry_monitored=False,
+                ping_monitored=True,
+                user_id=current_user['id'],
+                username=current_user['username'],
+                ip_address=request.remote_addr,
+                auto_log=True
+            )
             if domain_id:
                 flash(f'Host {host} added to ping monitoring successfully', 'success')
             else:
@@ -5237,6 +6632,19 @@ def remove_all_monitors(domain):
     if existing_domain:
         # Delete the domain from the database
         if db.delete_domain(existing_domain['id']):
+            # Log the domain deletion action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='delete',
+                resource_type='domain',
+                resource_id=existing_domain['id'],
+                resource_name=domain,
+                details=f'Removed domain from all monitoring (dashboard)',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             # Remove from SSL domains in config
             if 'ssl_domains' in config:
                 config['ssl_domains'] = [entry for entry in config['ssl_domains']
@@ -5297,20 +6705,12 @@ def save_notifications():
 
                 config['notifications']['email']['notification_email'] = request.form.get('notification_email', '')
 
-                # Update warning threshold days
-                warning_threshold = request.form.get('warning_threshold_days', '10')
-                try:
-                    warning_threshold = int(warning_threshold)
-                except (ValueError, TypeError):
-                    logger.warning(f"Invalid warning_threshold_days value: {warning_threshold}. Using default value of 10.")
-                    warning_threshold = 10
+                # Get warning threshold from app settings
+                app_settings = get_app_settings()
+                warning_threshold = app_settings.warning_threshold_days
 
+                # Set warning threshold from app settings
                 config['notifications']['email']['warning_threshold_days'] = warning_threshold
-
-                # Also update the email_settings for backward compatibility
-                if 'email_settings' not in config:
-                    config['email_settings'] = {}
-                config['email_settings']['warning_threshold_days'] = warning_threshold
 
             flash('Email notification settings saved successfully', 'success')
 
@@ -5346,6 +6746,59 @@ def save_notifications():
 
             flash('Discord notification settings saved successfully', 'success')
 
+        elif notification_type == 'telegram':
+            if 'telegram' not in config['notifications']:
+                config['notifications']['telegram'] = {}
+
+            config['notifications']['telegram']['enabled'] = enabled
+            if enabled:
+                config['notifications']['telegram']['bot_token'] = request.form.get('bot_token', '')
+                config['notifications']['telegram']['chat_id'] = request.form.get('chat_id', '')
+
+            flash('Telegram notification settings saved successfully', 'success')
+
+        elif notification_type == 'webhook':
+            if 'webhook' not in config['notifications']:
+                config['notifications']['webhook'] = {}
+
+            config['notifications']['webhook']['enabled'] = enabled
+            if enabled:
+                config['notifications']['webhook']['webhook_url'] = request.form.get('webhook_url', '')
+                config['notifications']['webhook']['format'] = request.form.get('format', 'json')
+
+                # Validate JSON format for custom headers and fields
+                custom_headers = request.form.get('custom_headers', '{}')
+                custom_fields = request.form.get('custom_fields', '{}')
+
+                try:
+                    json.loads(custom_headers)
+                    config['notifications']['webhook']['custom_headers'] = custom_headers
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid custom_headers JSON format: {custom_headers}. Using default value.")
+                    config['notifications']['webhook']['custom_headers'] = '{}'
+
+                try:
+                    json.loads(custom_fields)
+                    config['notifications']['webhook']['custom_fields'] = custom_fields
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid custom_fields JSON format: {custom_fields}. Using default value.")
+                    config['notifications']['webhook']['custom_fields'] = '{}'
+
+            flash('Custom webhook notification settings saved successfully', 'success')
+
+        elif notification_type == 'sms':
+            if 'sms' not in config['notifications']:
+                config['notifications']['sms'] = {}
+
+            config['notifications']['sms']['enabled'] = enabled
+            if enabled:
+                config['notifications']['sms']['account_sid'] = request.form.get('account_sid', '')
+                config['notifications']['sms']['auth_token'] = request.form.get('auth_token', '')
+                config['notifications']['sms']['from_number'] = request.form.get('from_number', '')
+                config['notifications']['sms']['to_number'] = request.form.get('to_number', '')
+
+            flash('SMS notification settings saved successfully', 'success')
+
         save_config(config)
         return redirect(url_for('notifications'))
 
@@ -5357,10 +6810,19 @@ def test_notification():
     if request.method == 'POST':
         notification_type = request.form.get('notification_type')
 
+        valid_types = ['email', 'teams', 'slack', 'discord', 'telegram', 'webhook', 'sms']
+        if notification_type not in valid_types:
+            flash(f"Unknown notification type: {notification_type}", 'danger')
+            return redirect(url_for('notifications'))
+
         notification_settings = get_notification_settings()
         settings = getattr(notification_settings, notification_type, {})
 
-        success, message = send_test_notification(notification_type, settings)
+        if not settings.get('enabled', False):
+            flash(f"{notification_type.capitalize()} notifications are disabled", 'warning')
+            return redirect(url_for('notifications'))
+
+        success, message = notifications.send_test_notification(notification_type, settings)
 
         if success:
             flash(f'Test notification sent successfully: {message}', 'success')
@@ -5409,8 +6871,8 @@ def check_domain_ping(domain):
                 # No checks in this segment
                 uptime_segments.append('unknown')
     else:
-        # If no history, use current status for all segments
-        uptime_segments = [ping_result["status"]] * 12
+        # If no history, use current status only for the most recent segment (last hour)
+        uptime_segments = ['unknown'] * 11 + [ping_result["status"]]
 
     # Update ping status in config for ping hosts
     config = load_config()
@@ -5457,7 +6919,7 @@ def delete_domain(domain_id):
             return jsonify({'success': False, 'error': 'You don\'t have access to any organizations'}), 403
 
         # Get domain by ID
-        domain = db.get_domain_by_id(domain_id)
+        domain = db.get_domain(domain_id)
         if not domain:
             return jsonify({'success': False, 'error': 'Domain not found'}), 404
 
@@ -5473,6 +6935,19 @@ def delete_domain(domain_id):
 
         # Delete domain from database
         if db.delete_domain(domain_id):
+            # Log the domain deletion action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='delete',
+                resource_type='domain',
+                resource_id=domain_id,
+                resource_name=domain_name,
+                details=f'Removed domain from all monitoring (API)',
+                ip_address=request.remote_addr,
+                organization_id=current_org['id']
+            )
+
             # Remove from SSL domains in config
             if 'ssl_domains' in config:
                 config['ssl_domains'] = [entry for entry in config['ssl_domains']
@@ -5525,7 +7000,7 @@ def get_domain(domain_id):
             return jsonify({'success': False, 'error': 'You don\'t have access to any organizations'}), 403
 
         # Get domain by ID
-        domain = db.get_domain_by_id(domain_id)
+        domain = db.get_domain(domain_id)
         if not domain:
             return jsonify({'success': False, 'error': 'Domain not found'}), 404
 
@@ -5542,9 +7017,17 @@ def get_domain(domain_id):
         if domain['ping_monitored']:
             monitors.append('ping')
 
-        # Create response data
+        # Create response data with both formats for backward compatibility
         response_data = {
             'success': True,
+            'domain': {
+                'id': domain['id'],
+                'name': domain['name'],
+                'ssl_monitored': domain['ssl_monitored'],
+                'expiry_monitored': domain['expiry_monitored'],
+                'ping_monitored': domain['ping_monitored'],
+                'organization_id': domain['organization_id']
+            },
             'data': {
                 'domain': domain['name'],
                 'monitors': monitors
@@ -5613,7 +7096,7 @@ def edit_domain_from_dashboard():
             config['ping_hosts'] = []
 
         # Get the domain by ID
-        existing_domain = db.get_domain_by_id(domain_id)
+        existing_domain = db.get_domain(domain_id)
         if not existing_domain:
             flash(f'Domain with ID {domain_id} not found', 'error')
             return redirect(url_for('index'))
@@ -5739,7 +7222,7 @@ def refresh_domain(domain_id):
             return jsonify({'success': False, 'error': 'You don\'t have access to any organizations'}), 403
 
         # Get domain by ID
-        domain = db.get_domain_by_id(domain_id)
+        domain = db.get_domain(domain_id)
         if not domain:
             return jsonify({'success': False, 'error': 'Domain not found'}), 404
 
@@ -5755,9 +7238,7 @@ def refresh_domain(domain_id):
         # Check if domain is monitored for SSL
         if domain['ssl_monitored']:
             # Clear SSL cache for this domain to force a fresh check
-            if domain_to_refresh in SSL_CACHE:
-                del SSL_CACHE[domain_to_refresh]
-                save_ssl_cache(SSL_CACHE)
+            db.clear_cache(f"ssl_{domain_to_refresh}")
 
             cert_status = check_certificate(domain_to_refresh)
             domain_data['ssl_status'] = {
@@ -5769,9 +7250,7 @@ def refresh_domain(domain_id):
         # Check if domain is monitored for expiry
         if domain['expiry_monitored']:
             # Clear domain expiry cache for this domain to force a fresh check
-            if domain_to_refresh in DOMAIN_EXPIRY_CACHE:
-                del DOMAIN_EXPIRY_CACHE[domain_to_refresh]
-                save_domain_expiry_cache(DOMAIN_EXPIRY_CACHE)
+            db.clear_cache(f"domain_expiry_{domain_to_refresh}")
 
             domain_status = check_domain_expiry(domain_to_refresh)
             domain_data['domain_status'] = {
@@ -5782,9 +7261,7 @@ def refresh_domain(domain_id):
             }
 
         # Clear ping cache for this domain to force a fresh check
-        if domain_to_refresh in PING_CACHE:
-            del PING_CACHE[domain_to_refresh]
-            save_ping_cache(PING_CACHE)
+        db.clear_cache(f"ping_{domain_to_refresh}")
 
         # Check ping status
         ping_result = check_ping(domain_to_refresh)
@@ -6688,7 +8165,7 @@ def profile():
                 return render_template('profile.html', user=current_user)
 
         # Update user profile
-        success = db.update_user(
+        success = db.update_user_email(
             user_id=current_user['id'],
             email=email
         )
@@ -6706,10 +8183,175 @@ def profile():
 
     # Get user preferences
     current_user['display_name'] = get_user_preference(current_user['id'], 'display_name', '')
-    current_user['theme_preference'] = get_user_preference(current_user['id'], 'theme_preference', 'system')
     current_user['email_alerts'] = get_user_preference(current_user['id'], 'email_alerts', True)
 
+    # Get profile image
+    profile_image = db.get_user_profile_image(current_user['id'])
+    if profile_image:
+        current_user['profile_image'] = profile_image
+
     return render_template('profile.html', user=current_user)
+
+@app.route('/upload_profile_image', methods=['POST'])
+@auth.login_required
+def upload_profile_image():
+    """Upload profile image for cropping"""
+    current_user = auth.get_current_user()
+
+    # Check if the post request has the file part
+    if 'profile_image' not in request.files:
+        flash('No file part', 'error')
+        return redirect(url_for('profile'))
+
+    file = request.files['profile_image']
+
+    # If user does not select file, browser also
+    # submit an empty part without filename
+    if file.filename == '':
+        flash('No selected file', 'error')
+        return redirect(url_for('profile'))
+
+    # Check if the file is allowed
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+    if not '.' in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+        flash('Invalid file type. Allowed types: png, jpg, jpeg, gif', 'error')
+        return redirect(url_for('profile'))
+
+    try:
+        # Generate a unique filename for the temporary image
+        import uuid
+        temp_filename = f"{uuid.uuid4()}.jpg"
+
+        # Save the uploaded file to the temp directory
+        from PIL import Image
+        import io
+        import os
+
+        # Get the current directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Create the full path to save the temporary image
+        temp_path = os.path.join(current_dir, 'static', 'temp', temp_filename)
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+
+        # Read and save the image
+        img = Image.open(file)
+
+        # Convert to RGB mode (in case it's RGBA or another mode)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Resize the image if it's too large to improve performance
+        max_size = (1200, 1200)
+        if img.width > max_size[0] or img.height > max_size[1]:
+            img.thumbnail(max_size, Image.LANCZOS)
+            logger.info(f"Resized image to {img.width}x{img.height}")
+
+        # Save the temporary image with high quality
+        img.save(temp_path, 'JPEG', quality=95)
+
+        # Log the temporary file path for debugging
+        logger.info(f"Temporary image saved at: {temp_path}")
+        logger.info(f"Redirecting to crop page with filename: {temp_filename}")
+
+        # Verify the file was saved correctly
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            logger.info(f"File saved successfully. Size: {os.path.getsize(temp_path)} bytes")
+        else:
+            logger.error(f"File not saved correctly or has zero size")
+            flash('Error saving uploaded image', 'error')
+            return redirect(url_for('profile'))
+
+        # Redirect to the crop page
+        return redirect(url_for('crop_profile_image', filename=temp_filename))
+
+    except Exception as e:
+        logger.error(f"Error uploading profile image: {str(e)}")
+        flash('Error uploading profile image', 'error')
+        return redirect(url_for('profile'))
+
+@app.route('/crop_profile_image/<filename>', methods=['GET'])
+@auth.login_required
+def crop_profile_image(filename):
+    """Show the image cropping page"""
+    logger.info(f"Rendering crop page for file: {filename}")
+
+    # Check if the temporary file exists
+    import os
+    temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'temp', filename)
+    if os.path.exists(temp_path):
+        logger.info(f"Temporary file exists at: {temp_path}")
+    else:
+        logger.error(f"Temporary file does not exist at: {temp_path}")
+        flash("Error: The uploaded image could not be found.", "error")
+        return redirect(url_for('profile'))
+
+    # Add timestamp to prevent browser caching
+    timestamp = int(time.time())
+    logger.info(f"Adding timestamp {timestamp} to prevent caching")
+
+    return render_template('crop_profile_image.html', temp_filename=filename, now=timestamp)
+
+@app.route('/save_cropped_image', methods=['POST'])
+@auth.login_required
+def save_cropped_image():
+    """Save the cropped profile image"""
+    current_user = auth.get_current_user()
+
+    try:
+        # Get the crop data and temp filename
+        crop_data = request.form.get('crop_data')
+        temp_filename = request.form.get('temp_filename')
+
+        if not crop_data or not temp_filename:
+            flash('Missing crop data or filename', 'error')
+            return redirect(url_for('profile'))
+
+        # Process the cropped image
+        import base64
+        from PIL import Image
+        import io
+        import os
+
+        # Get the current directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Create the full path to save the image
+        full_path = os.path.join(current_dir, 'static', f"profile_images/user_{current_user['id']}.jpg")
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+        # Convert base64 to image
+        # Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
+        crop_data = crop_data.split(',')[1]
+
+        # Decode base64 data
+        image_data = base64.b64decode(crop_data)
+
+        # Create image from binary data
+        img = Image.open(io.BytesIO(image_data))
+
+        # Save the image
+        img.save(full_path, 'JPEG')
+
+        # Update the user's profile image in the database
+        filename = f"profile_images/user_{current_user['id']}.jpg"
+        db.update_user_profile_image(current_user['id'], filename)
+
+        # Delete the temporary file
+        temp_path = os.path.join(current_dir, 'static', 'temp', temp_filename)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        flash('Profile image updated successfully', 'success')
+    except Exception as e:
+        logger.error(f"Error saving cropped image: {str(e)}")
+        flash('Error saving cropped image', 'error')
+
+    return redirect(url_for('profile'))
 
 @app.route('/change_password', methods=['POST'])
 @auth.login_required
@@ -6746,7 +8388,7 @@ def change_password():
     combined_hash = f"{password_hash}:{salt}"
 
     # Update password
-    success = db.update_user(
+    success = db.update_user_password(
         user_id=current_user['id'],
         password_hash=combined_hash
     )
@@ -6781,70 +8423,361 @@ def update_preferences():
     """Update user preferences"""
     current_user = auth.get_current_user()
 
-    theme_preference = request.form.get('theme_preference', 'system')
+    # Only handle email alerts now
     email_alerts = 'email_alerts' in request.form
 
     # Update preferences
-    set_user_preference(current_user['id'], 'theme_preference', theme_preference)
     set_user_preference(current_user['id'], 'email_alerts', email_alerts)
 
+    # Set a flash message
     flash('Preferences updated successfully', 'success')
+
+    # Redirect back to profile page
     return redirect(url_for('profile'))
 
-# Helper functions for user preferences
-def get_user_preference(user_id, key, default=None):
-    """Get a user preference"""
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT value FROM user_preferences WHERE user_id = ? AND key = ?",
-            (user_id, key)
-        )
-        result = cursor.fetchone()
-        if result:
-            # Handle boolean values
-            if result['value'] == 'True':
-                return True
-            elif result['value'] == 'False':
-                return False
-            return result['value']
-        return default
+# User preferences are now handled by database.py
 
-def set_user_preference(user_id, key, value):
-    """Set a user preference"""
-    # Convert boolean to string
-    if isinstance(value, bool):
-        value = str(value)
+# Logs Routes
+@app.route('/logs')
+@auth.login_required
+@auth.admin_required
+def logs():
+    """User action logs page with modern design and improved filtering"""
+    user = auth.get_current_user()
 
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
+    # Get query parameters for filtering
+    page = int(request.args.get('page', 1))
+    per_page = 25  # Reduced to show more pages for better pagination experience
+    username = request.args.get('username', '')
+    action_type = request.args.get('action_type', '')
+    resource_type = request.args.get('resource_type', '')
+    date_range = request.args.get('date_range', 'all')
+    start_date_str = request.args.get('start_date', '')
+    end_date_str = request.args.get('end_date', '')
+
+    # Import pytz at the top level
+    import pytz
+    from datetime import timezone
+
+    # Get user's timezone
+    app_settings = get_app_settings()
+    timezone_str = app_settings.timezone
+
+    # Get the user's timezone
+    try:
+        user_tz = pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        logger.warning(f"Unknown timezone {timezone_str}, using UTC")
+        user_tz = pytz.UTC
+
+    # Parse dates based on date_range or custom range
+    start_date = None
+    end_date = None
+
+    # Handle predefined date ranges
+    now = datetime.now(tz=user_tz)
+    if date_range == 'today':
+        # Today (in user's timezone)
+        start_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=user_tz)
+        end_date = datetime(now.year, now.month, now.day, 23, 59, 59, tzinfo=user_tz)
+    elif date_range == 'yesterday':
+        # Yesterday (in user's timezone)
+        yesterday = now - timedelta(days=1)
+        start_date = datetime(yesterday.year, yesterday.month, yesterday.day, 0, 0, 0, tzinfo=user_tz)
+        end_date = datetime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59, tzinfo=user_tz)
+    elif date_range == 'last7days':
+        # Last 7 days (in user's timezone)
+        start_date = now - timedelta(days=7)
+        end_date = now
+    elif date_range == 'last30days':
+        # Last 30 days (in user's timezone)
+        start_date = now - timedelta(days=30)
+        end_date = now
+    elif date_range == 'thismonth':
+        # This month (in user's timezone)
+        start_date = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=user_tz)
+        end_date = now
+    elif date_range == 'lastmonth':
+        # Last month (in user's timezone)
+        if now.month == 1:
+            last_month = datetime(now.year - 1, 12, 1, 0, 0, 0, tzinfo=user_tz)
+        else:
+            last_month = datetime(now.year, now.month - 1, 1, 0, 0, 0, tzinfo=user_tz)
+        start_date = last_month
+        # Last day of last month
+        if now.month == 1:
+            end_date = datetime(now.year - 1, 12, 31, 23, 59, 59, tzinfo=user_tz)
+        else:
+            # Get the last day of the previous month
+            last_day = (datetime(now.year, now.month, 1) - timedelta(days=1)).day
+            end_date = datetime(now.year, now.month - 1, last_day, 23, 59, 59, tzinfo=user_tz)
+    elif date_range == 'custom' and (start_date_str or end_date_str):
+        # Custom date range
+        if start_date_str:
+            try:
+                # Handle different date formats
+                if 'T' in start_date_str:
+                    # HTML datetime-local format: YYYY-MM-DDThh:mm
+                    local_dt = datetime.strptime(start_date_str, '%Y-%m-%dT%H:%M')
+                else:
+                    # Try ISO format
+                    local_dt = datetime.fromisoformat(start_date_str)
+
+                # Localize the datetime to user's timezone
+                start_date = user_tz.localize(local_dt)
+                logger.info(f"Parsed custom start date: {start_date}")
+            except ValueError as e:
+                logger.error(f"Error parsing start date: {e}")
+                flash('Invalid start date format', 'error')
+
+        if end_date_str:
+            try:
+                # Handle different date formats
+                if 'T' in end_date_str:
+                    # HTML datetime-local format: YYYY-MM-DDThh:mm
+                    local_dt = datetime.strptime(end_date_str, '%Y-%m-%dT%H:%M')
+                else:
+                    # Try ISO format
+                    local_dt = datetime.fromisoformat(end_date_str)
+
+                # Set end date to end of day if no time specified
+                if local_dt.hour == 0 and local_dt.minute == 0 and local_dt.second == 0:
+                    local_dt = local_dt.replace(hour=23, minute=59, second=59)
+
+                # Localize the datetime to user's timezone
+                end_date = user_tz.localize(local_dt)
+                logger.info(f"Parsed custom end date: {end_date}")
+            except ValueError as e:
+                logger.error(f"Error parsing end date: {e}")
+                flash('Invalid end date format', 'error')
+
+    # Convert timezone-aware datetimes to UTC for database filtering
+    if start_date:
+        start_date = start_date.astimezone(pytz.UTC).replace(tzinfo=None)
+        logger.info(f"Using start date (UTC): {start_date}")
+
+    if end_date:
+        end_date = end_date.astimezone(pytz.UTC).replace(tzinfo=None)
+        logger.info(f"Using end date (UTC): {end_date}")
+
+    # Get user ID if username filter is provided
+    user_id = None
+    if username:
+        user_data = db.get_user_by_username(username)
+        if user_data:
+            user_id = user_data['id']
+            logger.info(f"Filtering by user ID: {user_id} (username: {username})")
+        else:
+            logger.warning(f"Username not found: {username}")
+
+    # For admin users, show all logs regardless of organization
+    # For regular users, only show logs for their current organization
+    organization_id = None
+    if not user.get('is_admin'):
+        organization_id = user.get('current_organization', {}).get('id')
+        logger.info(f"Non-admin user, filtering by organization ID: {organization_id}")
+
+    # Get logs with filters
+    logs = db.get_user_action_logs(
+        limit=per_page,
+        offset=(page - 1) * per_page,
+        user_id=user_id,
+        action_type=action_type if action_type else None,
+        resource_type=resource_type if resource_type else None,
+        organization_id=organization_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+    # Get total count for pagination
+    total_logs = db.get_user_action_logs_count(
+        user_id=user_id,
+        action_type=action_type if action_type else None,
+        resource_type=resource_type if resource_type else None,
+        organization_id=organization_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+    logger.info(f"Found {total_logs} logs matching filters")
+
+    # Calculate total pages
+    total_pages = (total_logs + per_page - 1) // per_page if total_logs > 0 else 1
+
+    # Get unique action types and resource types for filter dropdowns
+    action_types = db.get_unique_action_types()
+    resource_types = db.get_unique_resource_types()
+
+    # Get all users for username filter dropdown
+    all_users = db.get_all_users()
+
+    return render_template('logs.html',
+                          logs=logs,
+                          total_logs=total_logs,
+                          page=page,
+                          total_pages=total_pages,
+                          user=user,
+                          filter_username=username,
+                          filter_action_type=action_type,
+                          filter_resource_type=resource_type,
+                          filter_date_range=date_range,
+                          filter_start_date=start_date_str,
+                          filter_end_date=end_date_str,
+                          action_types=action_types,
+                          resource_types=resource_types,
+                          all_users=all_users,
+                          timezone=timezone_str)
+
+@app.route('/export_logs')
+@auth.login_required
+@auth.admin_required
+def export_logs():
+    """Export logs as CSV"""
+    user = auth.get_current_user()
+
+    # Get query parameters for filtering
+    username = request.args.get('username')
+    action_type = request.args.get('action_type')
+    resource_type = request.args.get('resource_type')
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    # Parse dates if provided
+    start_date = None
+    end_date = None
+
+    # Import pytz at the top level
+    import pytz
+    from datetime import timezone
+
+    # Get user's timezone
+    app_settings = get_app_settings()
+    timezone_str = app_settings.timezone
+
+    # Get the user's timezone
+    try:
+        user_tz = pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        logger.warning(f"Unknown timezone {timezone_str}, using UTC")
+        user_tz = pytz.UTC
+
+    if start_date_str:
         try:
-            # Check if preference exists
-            cursor.execute(
-                "SELECT id FROM user_preferences WHERE user_id = ? AND key = ?",
-                (user_id, key)
-            )
-            result = cursor.fetchone()
-
-            if result:
-                # Update existing preference
-                cursor.execute(
-                    "UPDATE user_preferences SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (value, result['id'])
-                )
+            logger.info(f"Parsing start date for export: {start_date_str}")
+            # Handle different date formats
+            if 'T' in start_date_str:
+                # HTML datetime-local format: YYYY-MM-DDThh:mm
+                local_dt = datetime.strptime(start_date_str, '%Y-%m-%dT%H:%M')
             else:
-                # Insert new preference
-                cursor.execute(
-                    "INSERT INTO user_preferences (user_id, key, value) VALUES (?, ?, ?)",
-                    (user_id, key, value)
-                )
+                # Try ISO format
+                local_dt = datetime.fromisoformat(start_date_str)
 
-            conn.commit()
-            return True
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error setting user preference: {e}")
-            return False
+            # Localize the datetime to user's timezone
+            local_dt = user_tz.localize(local_dt)
+            # Convert to UTC for database filtering
+            start_date = local_dt.astimezone(pytz.UTC).replace(tzinfo=None)
+
+            logger.info(f"Parsed start date for export: {start_date} (original: {local_dt})")
+        except ValueError as e:
+            logger.error(f"Error parsing start date for export: {e}")
+            flash('Invalid start date format', 'error')
+            return redirect(url_for('logs'))
+
+    if end_date_str:
+        try:
+            logger.info(f"Parsing end date for export: {end_date_str}")
+            # Handle different date formats
+            if 'T' in end_date_str:
+                # HTML datetime-local format: YYYY-MM-DDThh:mm
+                local_dt = datetime.strptime(end_date_str, '%Y-%m-%dT%H:%M')
+            else:
+                # Try ISO format
+                local_dt = datetime.fromisoformat(end_date_str)
+
+            # Set end date to end of day
+            local_dt = local_dt.replace(hour=23, minute=59, second=59)
+
+            # Localize the datetime to user's timezone
+            local_dt = user_tz.localize(local_dt)
+            # Convert to UTC for database filtering
+            end_date = local_dt.astimezone(pytz.UTC).replace(tzinfo=None)
+
+            logger.info(f"Parsed end date for export: {end_date} (original: {local_dt})")
+        except ValueError as e:
+            logger.error(f"Error parsing end date for export: {e}")
+            flash('Invalid end date format', 'error')
+            return redirect(url_for('logs'))
+
+    # Get user ID if username filter is provided
+    user_id = None
+    if username:
+        user_data = db.get_user_by_username(username)
+        if user_data:
+            user_id = user_data['id']
+
+    # For admin users, show all logs regardless of organization
+    # For regular users, only show logs for their current organization
+    organization_id = None
+    if not user.get('is_admin'):
+        organization_id = user.get('current_organization', {}).get('id')
+
+    # Log the filter parameters for debugging
+    logger.info(f"Exporting logs with filters: user_id={user_id}, action_type={action_type}, "
+                f"resource_type={resource_type}, organization_id={organization_id}, "
+                f"start_date={start_date}, end_date={end_date}")
+
+    # Get all logs with filters (no pagination)
+    logs = db.get_user_action_logs(
+        limit=10000,  # Set a high limit to get all logs
+        offset=0,
+        user_id=user_id,
+        action_type=action_type,
+        resource_type=resource_type,
+        organization_id=organization_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+    logger.info(f"Exporting {len(logs)} logs")
+
+    # Create CSV file in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(['Time', 'User', 'Action', 'Resource Type', 'Resource Name', 'Details', 'IP Address'])
+
+    # Write data
+    for log in logs:
+        # Format the timestamp with the user's timezone
+        timestamp = ''
+        if log['created_at']:
+            try:
+                # Use the datetime filter to format the timestamp with the user's timezone
+                timestamp = format_datetime(log['created_at'], '%Y-%m-%d %H:%M:%S')
+            except Exception as e:
+                logger.error(f"Error formatting timestamp for CSV: {e}")
+                # Fallback to UTC
+                timestamp = datetime.fromtimestamp(log['created_at']).strftime('%Y-%m-%d %H:%M:%S')
+
+        writer.writerow([
+            timestamp,
+            log['username'],
+            log['action_type'],
+            log['resource_type'],
+            log['resource_name'] or '',
+            log['details'] or '',
+            log['ip_address'] or ''
+        ])
+
+    # Prepare response
+    output.seek(0)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment;filename=certifly_logs_{timestamp}.csv'}
+    )
 
 # User Administration Routes
 @app.route('/user_admin')
@@ -6881,6 +8814,195 @@ def user_admin():
                           organizations=organizations,
                           sort_by=sort_by,
                           sort_order=sort_order)
+
+@app.route('/bulk_activate_users', methods=['POST'])
+@auth.login_required
+@auth.admin_required
+def bulk_activate_users():
+    """Activate multiple users"""
+    # Check if user is admin
+    current_user = auth.get_current_user()
+    if not current_user.get('is_admin'):
+        flash('You do not have permission to perform this action', 'error')
+        return redirect(url_for('user_admin'))
+
+    user_ids = request.form.getlist('user_ids')
+
+    if not user_ids:
+        flash('No users selected', 'error')
+        return redirect(url_for('user_admin'))
+
+    # Activate each user
+    success_count = 0
+    error_count = 0
+
+    for user_id in user_ids:
+        try:
+            # Get user
+            user = db.get_user_by_id(user_id)
+            if not user:
+                error_count += 1
+                continue
+
+            # Skip if user is already active
+            if user.get('is_active'):
+                continue
+
+            # Activate user
+            db.update_user_status(user_id, True)
+
+            # Log the user activation action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='user',
+                resource_id=user_id,
+                resource_name=user['username'],
+                details=f'Admin activated user {user["username"]}',
+                ip_address=request.remote_addr
+            )
+
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Error activating user {user_id}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully activated {success_count} user(s)', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to activate {error_count} user(s)', 'error')
+
+    return redirect(url_for('user_admin'))
+
+@app.route('/bulk_deactivate_users', methods=['POST'])
+@auth.login_required
+@auth.admin_required
+def bulk_deactivate_users():
+    """Deactivate multiple users"""
+    # Check if user is admin
+    current_user = auth.get_current_user()
+    if not current_user.get('is_admin'):
+        flash('You do not have permission to perform this action', 'error')
+        return redirect(url_for('user_admin'))
+
+    user_ids = request.form.getlist('user_ids')
+
+    if not user_ids:
+        flash('No users selected', 'error')
+        return redirect(url_for('user_admin'))
+
+    # Deactivate each user
+    success_count = 0
+    error_count = 0
+
+    for user_id in user_ids:
+        try:
+            # Get user
+            user = db.get_user_by_id(user_id)
+            if not user:
+                error_count += 1
+                continue
+
+            # Skip if user is already inactive
+            if not user.get('is_active'):
+                continue
+
+            # Skip if user is current user
+            if str(user_id) == str(current_user.get('id')):
+                flash('You cannot deactivate your own account', 'warning')
+                continue
+
+            # Deactivate user
+            db.update_user_status(user_id, False)
+
+            # Log the user deactivation action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='update',
+                resource_type='user',
+                resource_id=user_id,
+                resource_name=user['username'],
+                details=f'Admin deactivated user {user["username"]}',
+                ip_address=request.remote_addr
+            )
+
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Error deactivating user {user_id}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully deactivated {success_count} user(s)', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to deactivate {error_count} user(s)', 'error')
+
+    return redirect(url_for('user_admin'))
+
+@app.route('/bulk_delete_users', methods=['POST'])
+@auth.login_required
+@auth.admin_required
+def bulk_delete_users():
+    """Delete multiple users"""
+    # Check if user is admin
+    current_user = auth.get_current_user()
+    if not current_user.get('is_admin'):
+        flash('You do not have permission to perform this action', 'error')
+        return redirect(url_for('user_admin'))
+
+    user_ids = request.form.getlist('user_ids')
+
+    if not user_ids:
+        flash('No users selected', 'error')
+        return redirect(url_for('user_admin'))
+
+    # Delete each user
+    success_count = 0
+    error_count = 0
+
+    for user_id in user_ids:
+        try:
+            # Get user
+            user = db.get_user_by_id(user_id)
+            if not user:
+                error_count += 1
+                continue
+
+            # Skip if user is current user
+            if str(user_id) == str(current_user.get('id')):
+                flash('You cannot delete your own account', 'warning')
+                continue
+
+            # Delete user
+            db.delete_user(user_id)
+
+            # Log the user deletion action
+            db.log_user_action(
+                user_id=current_user['id'],
+                username=current_user['username'],
+                action_type='delete',
+                resource_type='user',
+                resource_id=user_id,
+                resource_name=user['username'],
+                details=f'Admin bulk deleted user {user["username"]} with email {user["email"]}',
+                ip_address=request.remote_addr
+            )
+
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Error deleting user {user_id}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f'Successfully deleted {success_count} user(s)', 'success')
+
+    if error_count > 0:
+        flash(f'Failed to delete {error_count} user(s)', 'error')
+
+    return redirect(url_for('user_admin'))
 
 @app.route('/user_admin/add', methods=['POST'])
 @auth.login_required
@@ -6920,6 +9042,21 @@ def user_admin_add():
     if not user_id:
         flash('Error creating user', 'error')
         return redirect(url_for('user_admin'))
+
+    # Get current admin user
+    current_user = auth.get_current_user()
+
+    # Log the user creation action
+    db.log_user_action(
+        user_id=current_user['id'],
+        username=current_user['username'],
+        action_type='create',
+        resource_type='user',
+        resource_id=user_id,
+        resource_name=username,
+        details=f'Admin created user with email {email}, admin privileges: {is_admin}',
+        ip_address=request.remote_addr
+    )
 
     flash(f'User {username} created successfully', 'success')
     return redirect(url_for('user_admin'))
@@ -6968,6 +9105,33 @@ def user_admin_edit():
         flash('Error updating user', 'error')
         return redirect(url_for('user_admin'))
 
+    # Get current admin user
+    current_user = auth.get_current_user()
+
+    # Log the user update action
+    changes = []
+    if username != user['username']:
+        changes.append(f"username from {user['username']} to {username}")
+    if email != user['email']:
+        changes.append(f"email from {user['email']} to {email}")
+    if is_admin != user['is_admin']:
+        changes.append(f"admin status from {user['is_admin']} to {is_admin}")
+    if is_active != user['is_active']:
+        changes.append(f"active status from {user['is_active']} to {is_active}")
+
+    change_details = ", ".join(changes) if changes else "no changes"
+
+    db.log_user_action(
+        user_id=current_user['id'],
+        username=current_user['username'],
+        action_type='update',
+        resource_type='user',
+        resource_id=user_id,
+        resource_name=username,
+        details=f'Admin updated user: {change_details}',
+        ip_address=request.remote_addr
+    )
+
     flash(f'User {username} updated successfully', 'success')
     return redirect(url_for('user_admin'))
 
@@ -7012,6 +9176,21 @@ def user_admin_reset_password():
     # Invalidate all sessions for this user
     db.delete_user_sessions(user_id)
 
+    # Get current admin user
+    current_user = auth.get_current_user()
+
+    # Log the password reset action
+    db.log_user_action(
+        user_id=current_user['id'],
+        username=current_user['username'],
+        action_type='update',
+        resource_type='user',
+        resource_id=user_id,
+        resource_name=user["username"],
+        details=f'Admin reset password for user {user["username"]}',
+        ip_address=request.remote_addr
+    )
+
     flash(f'Password for {user["username"]} reset successfully', 'success')
     return redirect(url_for('user_admin'))
 
@@ -7044,6 +9223,18 @@ def user_admin_delete():
     if not success:
         flash('Error deleting user', 'error')
         return redirect(url_for('user_admin'))
+
+    # Log the user deletion action
+    db.log_user_action(
+        user_id=current_user['id'],
+        username=current_user['username'],
+        action_type='delete',
+        resource_type='user',
+        resource_id=user_id,
+        resource_name=user["username"],
+        details=f'Admin deleted user {user["username"]} with email {user["email"]}',
+        ip_address=request.remote_addr
+    )
 
     flash(f'User {user["username"]} deleted successfully', 'success')
     return redirect(url_for('user_admin'))
@@ -7278,40 +9469,14 @@ def api_get_organization_domains(org_id):
         logger.error(f"Error getting domains for organization {org_id}: {str(e)}")
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
-# Background task for periodic ping checks
+# Background task for periodic ping checks - disabled in favor of manual refresh
 def run_periodic_ping_checks():
-    """Run ping checks for all domains with ping monitoring enabled every 60 seconds"""
-    logger.info("Starting periodic ping checks thread")
+    """This function is now disabled as auto background checks have been removed"""
+    logger.info("Periodic ping checks are disabled")
 
+    # Just sleep indefinitely to keep the thread alive but not doing anything
     while True:
-        try:
-            # Get all domains with ping monitoring enabled
-            all_domains = db.get_all_domains()
-            ping_domains = [domain for domain in all_domains if domain.get('ping_monitored', False)]
-
-            if ping_domains:
-                logger.info(f"Running periodic ping checks for {len(ping_domains)} domains")
-
-                for domain in ping_domains:
-                    try:
-                        domain_name = domain.get('name')
-                        if domain_name:
-                            # Check ping status and record it in the database
-                            # This will automatically update the ping history
-                            ping_result = check_ping(domain_name)
-                            logger.debug(f"Periodic ping check for {domain_name}: {ping_result['status']} ({ping_result['response_time']} ms)")
-                    except Exception as e:
-                        logger.error(f"Error in periodic ping check for domain {domain.get('name', 'unknown')}: {str(e)}")
-
-                logger.info("Completed periodic ping checks")
-            else:
-                logger.debug("No domains with ping monitoring enabled found")
-
-        except Exception as e:
-            logger.error(f"Error in periodic ping checks: {str(e)}", exc_info=True)
-
-        # Sleep for 60 seconds before the next check
-        time.sleep(60)
+        time.sleep(3600)  # Sleep for an hour
 
 # Function to add test ping data for a domain
 def add_test_ping_data(domain_name, num_entries=24):
@@ -7325,19 +9490,18 @@ def add_test_ping_data(domain_name, num_entries=24):
         return False
 
     # Generate test data
-    current_time = datetime.now()
     success_count = 0
 
     for i in range(num_entries):
-        # Create a timestamp going back in time
-        timestamp = current_time - timedelta(hours=i)
-
         # Generate a random response time between 10ms and 200ms
         import random
         response_time = random.randint(10, 200)
 
         # Most entries should be 'up', but add some 'down' entries randomly
         status = 'up' if random.random() > 0.1 else 'down'
+
+        # Use the timestamp for the database record
+        # The record_ping_status function will create the database entry with this timestamp
 
         # Record the ping status
         success = db.record_ping_status(domain_name, status, response_time)

@@ -1,0 +1,9 @@
+{% macro render_profile_picture(profile_image, size=32, font_size=18) %}
+    {% if profile_image %}
+        <img src="{{ url_for('static', filename=profile_image) }}?v={{ now }}" alt="Profile" class="rounded-circle" style="width: {{ size }}px; height: {{ size }}px; object-fit: cover;">
+    {% else %}
+        <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center" style="width: {{ size }}px; height: {{ size }}px;">
+            <i class="bi bi-person-fill text-white" style="font-size: {{ font_size }}px;"></i>
+        </div>
+    {% endif %}
+{% endmacro %}

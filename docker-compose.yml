@@ -4,15 +4,47 @@ services:
   web:
     build: .
     ports:
-      - "5000:5000"
+      - "${WEB_PORT:-5000}:5000"
     volumes:
       - ./data:/data
     environment:
-      - FLASK_ENV=production
+      - FLASK_ENV=${FLASK_ENV:-production}
       - CERT_MONITOR_DATA_DIR=/data
+      - DB_USER=${DB_USER:-certifly}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-certifly}
+      - SECRET_KEY=${SECRET_KEY:-default_secret_key_change_me}
+      - WHOIS_API_KEY=${WHOIS_API_KEY:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 5s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:14
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${DB_USER:-certifly}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-password}
+      - POSTGRES_DB=${DB_NAME:-certifly}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-certifly}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${DB_PORT:-5432}:5432"
+
+volumes:
+  postgres_data:

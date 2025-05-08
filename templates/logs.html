@@ -1,0 +1,415 @@
+{% extends 'base.html' %}
+{% from 'partials/profile_picture.html' import render_profile_picture %}
+
+{% block title %}Logs - Certifly{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">System Logs</h1>
+            <p class="dashboard-subtitle">
+                View and filter system activity logs
+                <span class="badge bg-info text-dark ms-1" data-bs-toggle="tooltip" title="All timestamps are automatically converted to your current timezone">
+                    <i class="bi bi-clock me-1"></i>Timezone: {{ timezone }}
+                </span>
+            </p>
+        </div>
+        <div class="dashboard-actions">
+            <a href="{{ url_for('logs') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-clockwise"></i> Reset
+            </a>
+            <button id="refreshLogsBtn" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-repeat"></i> Refresh
+            </button>
+            <a href="{{ url_for('export_logs', **request.args) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-download"></i> Export
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-main-content">
+        <!-- Filters -->
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-funnel me-1"></i> Filters
+                    {% if filter_username or filter_action_type or filter_resource_type or filter_date_range != 'all' %}
+                    <span class="badge bg-primary ms-2">Active</span>
+                    {% endif %}
+                </h5>
+                <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+            </div>
+            <div class="collapse {% if filter_username or filter_action_type or filter_resource_type or filter_date_range != 'all' %}show{% endif %}" id="filtersCollapse">
+                <div class="card-body py-2">
+                    <form action="{{ url_for('logs') }}" method="get" class="row g-2">
+                        <div class="col-md-3">
+                            <label for="username" class="form-label small mb-1">Username</label>
+                            <select class="form-select form-select-sm" id="username" name="username">
+                                <option value="">All Users</option>
+                                {% for user_item in all_users %}
+                                    <option value="{{ user_item.username }}" {% if filter_username == user_item.username %}selected{% endif %}>
+                                        {{ user_item.username }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="action_type" class="form-label small mb-1">Action Type</label>
+                            <select class="form-select form-select-sm" id="action_type" name="action_type">
+                                <option value="">All Actions</option>
+                                {% for action in action_types %}
+                                    <option value="{{ action }}" {% if filter_action_type == action %}selected{% endif %}>
+                                        {{ action|title }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="resource_type" class="form-label small mb-1">Resource Type</label>
+                            <select class="form-select form-select-sm" id="resource_type" name="resource_type">
+                                <option value="">All Resources</option>
+                                {% for resource in resource_types %}
+                                    <option value="{{ resource }}" {% if filter_resource_type == resource %}selected{% endif %}>
+                                        {{ resource|title }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="date_range" class="form-label small mb-1">Date Range</label>
+                            <select class="form-select form-select-sm" id="date_range" name="date_range">
+                                <option value="all" {% if filter_date_range == 'all' %}selected{% endif %}>All Time</option>
+                                <option value="today" {% if filter_date_range == 'today' %}selected{% endif %}>Today</option>
+                                <option value="yesterday" {% if filter_date_range == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                                <option value="last7days" {% if filter_date_range == 'last7days' %}selected{% endif %}>Last 7 Days</option>
+                                <option value="last30days" {% if filter_date_range == 'last30days' %}selected{% endif %}>Last 30 Days</option>
+                                <option value="thismonth" {% if filter_date_range == 'thismonth' %}selected{% endif %}>This Month</option>
+                                <option value="lastmonth" {% if filter_date_range == 'lastmonth' %}selected{% endif %}>Last Month</option>
+                                <option value="custom" {% if filter_date_range == 'custom' %}selected{% endif %}>Custom Range</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-3 custom-date-range {% if filter_date_range != 'custom' %}d-none{% endif %}">
+                            <label for="start_date" class="form-label small mb-1">Start Date</label>
+                            <input type="datetime-local" class="form-control form-control-sm" id="start_date" name="start_date" value="{{ filter_start_date }}">
+                        </div>
+                        <div class="col-md-3 custom-date-range {% if filter_date_range != 'custom' %}d-none{% endif %}">
+                            <label for="end_date" class="form-label small mb-1">End Date</label>
+                            <input type="datetime-local" class="form-control form-control-sm" id="end_date" name="end_date" value="{{ filter_end_date }}">
+                        </div>
+
+                        <div class="col-md-12 text-end mt-2">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-funnel-fill me-1"></i> Apply Filters
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Table -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-list-ul me-1"></i> Log Entries
+                </h5>
+                <div class="d-flex align-items-center">
+                    <span class="badge bg-primary me-2">{{ total_logs }} entries</span>
+                    {% if total_pages > 1 %}
+                    <div class="btn-group btn-group-sm me-2">
+                        <a href="{{ url_for('logs', page=1, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" class="btn btn-outline-secondary {% if page == 1 %}disabled{% endif %}">
+                            <i class="bi bi-chevron-double-left"></i>
+                        </a>
+                        <a href="{{ url_for('logs', page=page-1, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" class="btn btn-outline-secondary {% if page == 1 %}disabled{% endif %}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                        <button class="btn btn-outline-secondary" disabled>{{ page }} / {{ total_pages }}</button>
+                        <a href="{{ url_for('logs', page=page+1, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" class="btn btn-outline-secondary {% if page == total_pages %}disabled{% endif %}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                        <a href="{{ url_for('logs', page=total_pages, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" class="btn btn-outline-secondary {% if page == total_pages %}disabled{% endif %}">
+                            <i class="bi bi-chevron-double-right"></i>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0 logs-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 15%">Time</th>
+                                <th style="width: 10%">User</th>
+                                <th style="width: 10%">Action</th>
+                                <th style="width: 15%">Resource</th>
+                                <th style="width: 40%">Details</th>
+                                <th style="width: 10%">IP Address</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if logs %}
+                                {% for log in logs %}
+                                <tr>
+                                    <td>
+                                        <div class="fw-medium">{{ log.created_at|datetime }}</div>
+                                        <small class="text-muted">{{ log.created_at|relative_time }}</small>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="me-2">
+                                                {{ render_profile_picture(log.user_profile_image, 24, 14) }}
+                                            </span>
+                                            <span class="fw-medium">{{ log.username }}</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge rounded-pill
+                                            {% if log.action_type == 'login' %}bg-success{% endif %}
+                                            {% if log.action_type == 'logout' %}bg-secondary{% endif %}
+                                            {% if log.action_type == 'create' %}bg-primary{% endif %}
+                                            {% if log.action_type == 'update' %}bg-info text-dark{% endif %}
+                                            {% if log.action_type == 'delete' %}bg-danger{% endif %}
+                                            {% if log.action_type == 'acknowledge' %}bg-warning text-dark{% endif %}
+                                            {% if not log.action_type in ['login', 'logout', 'create', 'update', 'delete', 'acknowledge'] %}bg-dark{% endif %}
+                                        ">
+                                            {{ log.action_type }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="badge bg-light text-dark me-2">{{ log.resource_type }}</span>
+                                            {% if log.resource_name %}
+                                                <span class="text-truncate">{{ log.resource_name }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="text-wrap">{{ log.details }}</td>
+                                    <td>
+                                        <span class="text-monospace small">{{ log.ip_address }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-5">
+                                        <div class="empty-state">
+                                            <i class="bi bi-journal-text empty-state-icon"></i>
+                                            <h5 class="mt-3">No logs found</h5>
+                                            <p class="text-muted">Try adjusting your filters to see more results</p>
+                                            <a href="{{ url_for('logs') }}" class="btn btn-sm btn-outline-secondary mt-2">
+                                                <i class="bi bi-arrow-clockwise me-1"></i> Reset Filters
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% if total_pages > 1 %}
+            <div class="card-footer py-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="small text-muted">
+                        Showing {{ logs|length }} of {{ total_logs }} logs (page {{ page }} of {{ total_pages }})
+                    </div>
+                    <nav aria-label="Logs pagination">
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('logs', page=1, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" aria-label="First">
+                                    <span aria-hidden="true">&laquo;&laquo;</span>
+                                </a>
+                            </li>
+                            <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('logs', page=page-1, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" aria-label="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+
+                            {% for p in range(1, total_pages + 1) %}
+                                {% if p == page %}
+                                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                                {% elif p <= 2 or p >= total_pages - 1 or (p >= page - 1 and p <= page + 1) %}
+                                <li class="page-item"><a class="page-link" href="{{ url_for('logs', page=p, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}">{{ p }}</a></li>
+                                {% elif p == 3 and page > 4 or p == total_pages - 2 and page < total_pages - 3 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+
+                            <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('logs', page=page+1, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" aria-label="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                            <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('logs', page=total_pages, username=filter_username, action_type=filter_action_type, resource_type=filter_resource_type, date_range=filter_date_range, start_date=filter_start_date, end_date=filter_end_date) }}" aria-label="Last">
+                                    <span aria-hidden="true">&raquo;&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    /* Empty state styling */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2.5rem;
+        color: #6c757d;
+    }
+    .empty-state-icon {
+        font-size: 3rem;
+        margin-bottom: 0.75rem;
+        opacity: 0.6;
+    }
+
+    /* Table styling */
+    .logs-table {
+        font-size: 0.9rem;
+    }
+    .logs-table td {
+        padding: 0.5rem 0.75rem;
+        vertical-align: middle;
+    }
+    .logs-table th {
+        padding: 0.6rem 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+    }
+    .logs-table .badge {
+        font-weight: 500;
+        padding: 0.35em 0.65em;
+    }
+
+    /* Text styling */
+    .text-monospace {
+        font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.8rem;
+    }
+    .text-truncate {
+        max-width: 150px;
+        display: inline-block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Card styling */
+    .card-header {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+    .card-footer {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+
+    /* Pagination styling */
+    .pagination {
+        margin-bottom: 0;
+    }
+    .pagination .page-link {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    /* Filter form styling */
+    .form-label.small {
+        font-weight: 500;
+        color: #6c757d;
+    }
+    .form-select-sm, .form-control-sm {
+        font-size: 0.85rem;
+    }
+
+    /* Badge styling */
+    .badge.rounded-pill {
+        padding-left: 0.6em;
+        padding-right: 0.6em;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // Refresh button functionality
+        document.getElementById('refreshLogsBtn').addEventListener('click', function() {
+            // Show loading indicator
+            const btn = this;
+            const icon = btn.querySelector('i');
+            const originalText = btn.innerHTML;
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Refreshing...';
+
+            // Reload the page
+            setTimeout(function() {
+                window.location.reload();
+            }, 200);
+        });
+
+        // Date range selector
+        const dateRangeSelect = document.getElementById('date_range');
+        const customDateFields = document.querySelectorAll('.custom-date-range');
+
+        dateRangeSelect.addEventListener('change', function() {
+            if (this.value === 'custom') {
+                customDateFields.forEach(field => {
+                    field.classList.remove('d-none');
+                    // Focus on the first date field
+                    if (field.querySelector('#start_date')) {
+                        setTimeout(() => field.querySelector('#start_date').focus(), 100);
+                    }
+                });
+            } else {
+                customDateFields.forEach(field => field.classList.add('d-none'));
+            }
+        });
+
+        // Add hover effect to table rows
+        const tableRows = document.querySelectorAll('.logs-table tbody tr');
+        tableRows.forEach(row => {
+            row.addEventListener('mouseenter', function() {
+                this.style.backgroundColor = 'rgba(0, 123, 255, 0.03)';
+            });
+            row.addEventListener('mouseleave', function() {
+                this.style.backgroundColor = '';
+            });
+        });
+    });
+</script>
+
+<style>
+    /* Add spinning animation for refresh icon */
+    .spin {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}

@@ -41,6 +41,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
+    profile_image = Column(String, nullable=True)  # Path to profile image
     is_admin = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -50,6 +51,8 @@ class User(Base):
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     organizations = relationship("UserOrganization", back_populates="user", cascade="all, delete-orphan")
     alert_history = relationship("AlertHistory", back_populates="user", cascade="all, delete-orphan")
+    action_logs = relationship("UserActionLog", foreign_keys="UserActionLog.user_id", cascade="all, delete-orphan")
+    preferences = relationship("UserPreference", back_populates="user", cascade="all, delete-orphan")
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -148,6 +151,25 @@ class AlertHistory(Base):
     # Relationships
     user = relationship("User", back_populates="alert_history")
 
+class UserActionLog(Base):
+    __tablename__ = "user_action_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    username = Column(String)
+    action_type = Column(String)  # login, logout, create, update, delete, etc.
+    resource_type = Column(String)  # domain, organization, user, alert, etc.
+    resource_id = Column(String, nullable=True)  # ID of the affected resource
+    resource_name = Column(String, nullable=True)  # Name of the affected resource
+    details = Column(Text, nullable=True)  # Additional details about the action
+    ip_address = Column(String, nullable=True)  # IP address of the user
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)  # Always stored in UTC
+
+    # Relationships
+    user = relationship("User", overlaps="action_logs")
+    organization = relationship("Organization")
+
 class Setting(Base):
     __tablename__ = "settings"
 
@@ -193,6 +215,24 @@ class Session(Base):
 
     # Relationships
     user = relationship("User", back_populates="sessions")
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    key = Column(String, nullable=False)
+    value = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Create a unique constraint on user_id and key
+    __table_args__ = (
+        UniqueConstraint('user_id', 'key', name='uix_user_preference'),
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="preferences")
 
 # Session management functions
 def create_session(user_id, session_token, expires_at):
@@ -258,6 +298,7 @@ def get_user_by_id(user_id):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
+                'profile_image': user.profile_image,
                 'is_admin': user.is_admin,
                 'is_active': user.is_active,
                 'created_at': user.created_at.timestamp() if user.created_at else None
@@ -274,6 +315,7 @@ def get_user_by_username(username):
                 'username': user.username,
                 'email': user.email,
                 'password_hash': user.password_hash,
+                'profile_image': user.profile_image,
                 'is_admin': user.is_admin,
                 'is_active': user.is_active,
                 'created_at': user.created_at.timestamp() if user.created_at else None
@@ -290,6 +332,7 @@ def get_user_by_email(email):
                 'username': user.username,
                 'email': user.email,
                 'password_hash': user.password_hash,
+                'profile_image': user.profile_image,
                 'is_admin': user.is_admin,
                 'is_active': user.is_active,
                 'created_at': user.created_at.timestamp() if user.created_at else None
@@ -305,6 +348,7 @@ def get_all_users():
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
+                'profile_image': user.profile_image,
                 'is_admin': user.is_admin,
                 'is_active': user.is_active,
                 'created_at': user.created_at.timestamp() if user.created_at else None
@@ -321,6 +365,7 @@ def get_users_by_partial_username(partial_username):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
+                'profile_image': user.profile_image,
                 'is_admin': user.is_admin,
                 'is_active': user.is_active,
                 'created_at': user.created_at.timestamp() if user.created_at else None
@@ -342,6 +387,48 @@ def update_user(user_id, username, email, is_admin=False, is_active=True):
 
         db.commit()
         return True
+
+def update_user_email(user_id, email):
+    """Update just the user's email"""
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+
+        user.email = email
+        db.commit()
+        return True
+
+def update_user_password(user_id, password_hash):
+    """Update just the user's password"""
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+
+        user.password_hash = password_hash
+        db.commit()
+        return True
+
+def update_user_profile_image(user_id, image_path):
+    """Update user's profile image path"""
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+
+        user.profile_image = image_path
+        db.commit()
+        return True
+
+def get_user_profile_image(user_id):
+    """Get user's profile image path"""
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return None
+
+        return user.profile_image
 
 def delete_user(user_id):
     """Delete a user"""
@@ -560,8 +647,28 @@ def get_organization_tags(org_id):
     return []
 
 # Domain management functions
-def add_domain(name, organization_id, ssl_monitored=False, expiry_monitored=False, ping_monitored=False):
-    """Add a new domain with monitoring options"""
+def add_domain(name, organization_id, ssl_monitored=False, expiry_monitored=False, ping_monitored=False,
+              user_id=None, username=None, ip_address=None, auto_log=False):
+    """
+    Add a new domain with monitoring options
+
+    Args:
+        name (str): Domain name
+        organization_id (int): Organization ID
+        ssl_monitored (bool): Whether SSL monitoring is enabled
+        expiry_monitored (bool): Whether expiry monitoring is enabled
+        ping_monitored (bool): Whether ping monitoring is enabled
+        user_id (int, optional): User ID for logging
+        username (str, optional): Username for logging
+        ip_address (str, optional): IP address for logging
+        auto_log (bool): Whether to automatically create a log entry
+
+    Returns:
+        int: Domain ID
+    """
+    import logging
+    logger = logging.getLogger('certifly')
+
     with get_db() as db:
         # Check if domain already exists
         existing = db.query(Domain).filter(
@@ -576,6 +683,31 @@ def add_domain(name, organization_id, ssl_monitored=False, expiry_monitored=Fals
             set_organization_setting(organization_id, f"domain_{domain_id}_ssl_monitored", ssl_monitored)
             set_organization_setting(organization_id, f"domain_{domain_id}_expiry_monitored", expiry_monitored)
             set_organization_setting(organization_id, f"domain_{domain_id}_ping_monitored", ping_monitored)
+
+            # Log the update if auto_log is enabled
+            if auto_log and user_id and username:
+                monitoring_types = []
+                if ssl_monitored:
+                    monitoring_types.append("SSL")
+                if expiry_monitored:
+                    monitoring_types.append("expiry")
+                if ping_monitored:
+                    monitoring_types.append("ping")
+
+                monitoring_str = ", ".join(monitoring_types) if monitoring_types else "no"
+
+                log_user_action(
+                    user_id=user_id,
+                    username=username,
+                    action_type='update',
+                    resource_type='domain',
+                    resource_id=domain_id,
+                    resource_name=name,
+                    details=f'Updated domain with {monitoring_str} monitoring',
+                    ip_address=ip_address,
+                    organization_id=organization_id
+                )
+
             return domain_id
 
         # Create new domain
@@ -592,6 +724,36 @@ def add_domain(name, organization_id, ssl_monitored=False, expiry_monitored=Fals
         set_organization_setting(organization_id, f"domain_{domain_id}_ssl_monitored", ssl_monitored)
         set_organization_setting(organization_id, f"domain_{domain_id}_expiry_monitored", expiry_monitored)
         set_organization_setting(organization_id, f"domain_{domain_id}_ping_monitored", ping_monitored)
+
+        # Log the creation if auto_log is enabled
+        if auto_log and user_id and username:
+            monitoring_types = []
+            if ssl_monitored:
+                monitoring_types.append("SSL")
+            if expiry_monitored:
+                monitoring_types.append("expiry")
+            if ping_monitored:
+                monitoring_types.append("ping")
+
+            monitoring_str = ", ".join(monitoring_types) if monitoring_types else "no"
+
+            logger.info(f"Auto-logging domain creation: {name} (ID: {domain_id}) with {monitoring_str} monitoring")
+
+            try:
+                log_result = log_user_action(
+                    user_id=user_id,
+                    username=username,
+                    action_type='create',
+                    resource_type='domain',
+                    resource_id=domain_id,
+                    resource_name=name,
+                    details=f'Added domain with {monitoring_str} monitoring',
+                    ip_address=ip_address,
+                    organization_id=organization_id
+                )
+                logger.info(f"Auto-log result: {log_result}")
+            except Exception as e:
+                logger.error(f"Error creating auto-log entry: {str(e)}", exc_info=True)
 
         return domain_id
 
@@ -617,9 +779,7 @@ def get_domain(domain_id):
             }
         return None
 
-def get_domain_by_id(domain_id):
-    """Get domain by ID (alias for get_domain)"""
-    return get_domain(domain_id)
+# Removed redundant get_domain_by_id function - use get_domain instead
 
 def get_domain_by_name(name):
     """Get domain by name"""
@@ -762,6 +922,237 @@ def add_alert_history(alert_id, domain_name, alert_type, status, message, action
         db.commit()
         return True
 
+# User action logging functions
+def log_user_action(user_id, username, action_type, resource_type, resource_id=None, resource_name=None,
+                   details=None, ip_address=None, organization_id=None):
+    """
+    Log a user action in the database
+
+    Args:
+        user_id (int): The ID of the user performing the action
+        username (str): The username of the user performing the action
+        action_type (str): The type of action (login, logout, create, update, delete, etc.)
+        resource_type (str): The type of resource being acted upon (domain, organization, user, alert, etc.)
+        resource_id (str, optional): The ID of the resource being acted upon
+        resource_name (str, optional): The name of the resource being acted upon
+        details (str, optional): Additional details about the action
+        ip_address (str, optional): The IP address of the user
+        organization_id (int, optional): The ID of the organization the action is related to
+
+    Returns:
+        bool: True if the action was logged successfully
+    """
+    import logging
+    logger = logging.getLogger('certifly')
+    from datetime import datetime
+
+    try:
+        logger.info(f"Logging user action: user={username}, action={action_type}, resource={resource_type}, resource_name={resource_name}")
+
+        with get_db() as db:
+            # Use local time (datetime.now()) instead of UTC time to match the timezone used in direct log creation
+            log_entry = UserActionLog(
+                user_id=user_id,
+                username=username,
+                action_type=action_type,
+                resource_type=resource_type,
+                resource_id=str(resource_id) if resource_id is not None else None,
+                resource_name=resource_name,
+                details=details,
+                ip_address=ip_address,
+                organization_id=organization_id,
+                created_at=datetime.now()  # Use local time instead of default UTC
+            )
+            db.add(log_entry)
+            db.commit()
+            logger.info(f"Successfully logged user action with ID: {log_entry.id}")
+            return True
+    except Exception as e:
+        logger.error(f"Error logging user action: {str(e)}", exc_info=True)
+        return False
+
+def get_user_action_logs(limit=50, offset=0, user_id=None, action_type=None,
+                        resource_type=None, organization_id=None, start_date=None, end_date=None):
+    """
+    Get user action logs with filtering and pagination
+
+    Args:
+        limit (int): Maximum number of logs to return
+        offset (int): Offset for pagination
+        user_id (int, optional): Filter by user ID
+        action_type (str, optional): Filter by action type
+        resource_type (str, optional): Filter by resource type
+        organization_id (int, optional): Filter by organization ID
+        start_date (datetime, optional): Filter by start date (UTC)
+        end_date (datetime, optional): Filter by end date (UTC)
+
+    Returns:
+        list: List of user action logs with UTC timestamps
+    """
+    import logging
+    logger = logging.getLogger('certifly')
+
+    logger.info(f"Getting logs with filters: user_id={user_id}, action_type={action_type}, "
+                f"resource_type={resource_type}, organization_id={organization_id}, "
+                f"start_date={start_date}, end_date={end_date}")
+
+    try:
+        with get_db() as db:
+            query = db.query(UserActionLog)
+
+            # Apply filters
+            if user_id is not None:
+                query = query.filter(UserActionLog.user_id == user_id)
+            if action_type is not None:
+                query = query.filter(UserActionLog.action_type == action_type)
+            if resource_type is not None:
+                query = query.filter(UserActionLog.resource_type == resource_type)
+            if organization_id is not None:
+                query = query.filter(UserActionLog.organization_id == organization_id)
+            if start_date is not None:
+                query = query.filter(UserActionLog.created_at >= start_date)
+            if end_date is not None:
+                query = query.filter(UserActionLog.created_at <= end_date)
+
+            # Order by created_at descending (newest first)
+            query = query.order_by(UserActionLog.created_at.desc())
+
+            # Apply pagination
+            logs = query.limit(limit).offset(offset).all()
+
+            logger.info(f"Found {len(logs)} logs")
+
+            # Get user profile images for all users in the logs
+            user_ids = set(log.user_id for log in logs if log.user_id is not None)
+            user_profile_images = {}
+
+            if user_ids:
+                users = db.query(User).filter(User.id.in_(user_ids)).all()
+                for user in users:
+                    user_profile_images[user.id] = user.profile_image
+
+            # Convert to dictionaries with UTC timestamps
+            # We'll handle timezone conversion in the template
+            result = [
+                {
+                    'id': log.id,
+                    'user_id': log.user_id,
+                    'username': log.username,
+                    'user_profile_image': user_profile_images.get(log.user_id) if log.user_id is not None else None,
+                    'action_type': log.action_type,
+                    'resource_type': log.resource_type,
+                    'resource_id': log.resource_id,
+                    'resource_name': log.resource_name,
+                    'details': log.details,
+                    'ip_address': log.ip_address,
+                    'organization_id': log.organization_id,
+                    'created_at': log.created_at.timestamp() if log.created_at else None,
+                    # Add ISO format for easier debugging
+                    'created_at_iso': log.created_at.isoformat() if log.created_at else None
+                }
+                for log in logs
+            ]
+
+            # Log the first few entries for debugging
+            if result and len(result) > 0:
+                logger.info(f"First log entry: id={result[0]['id']}, action={result[0]['action_type']}, "
+                           f"resource={result[0]['resource_type']}, "
+                           f"timestamp={result[0]['created_at']}, "
+                           f"iso={result[0]['created_at_iso']}")
+
+            return result
+    except Exception as e:
+        logger.error(f"Error getting logs: {str(e)}", exc_info=True)
+        return []
+
+def get_user_action_logs_count(user_id=None, action_type=None, resource_type=None,
+                              organization_id=None, start_date=None, end_date=None):
+    """
+    Get count of user action logs with filtering
+
+    Args:
+        user_id (int, optional): Filter by user ID
+        action_type (str, optional): Filter by action type
+        resource_type (str, optional): Filter by resource type
+        organization_id (int, optional): Filter by organization ID
+        start_date (datetime, optional): Filter by start date
+        end_date (datetime, optional): Filter by end date
+
+    Returns:
+        int: Count of user action logs
+    """
+    import logging
+    logger = logging.getLogger('certifly')
+
+    logger.info(f"Getting logs count with filters: user_id={user_id}, action_type={action_type}, "
+                f"resource_type={resource_type}, organization_id={organization_id}, "
+                f"start_date={start_date}, end_date={end_date}")
+
+    try:
+        with get_db() as db:
+            query = db.query(UserActionLog)
+
+            # Apply filters
+            if user_id is not None:
+                query = query.filter(UserActionLog.user_id == user_id)
+            if action_type is not None:
+                query = query.filter(UserActionLog.action_type == action_type)
+            if resource_type is not None:
+                query = query.filter(UserActionLog.resource_type == resource_type)
+            if organization_id is not None:
+                query = query.filter(UserActionLog.organization_id == organization_id)
+            if start_date is not None:
+                query = query.filter(UserActionLog.created_at >= start_date)
+            if end_date is not None:
+                query = query.filter(UserActionLog.created_at <= end_date)
+
+            count = query.count()
+            logger.info(f"Found {count} logs")
+            return count
+    except Exception as e:
+        logger.error(f"Error getting logs count: {str(e)}", exc_info=True)
+        return 0
+
+def get_unique_action_types():
+    """
+    Get a list of unique action types from the logs
+
+    Returns:
+        list: List of unique action types
+    """
+    import logging
+    logger = logging.getLogger('certifly')
+
+    try:
+        with get_db() as db:
+            # Use distinct to get unique values
+            action_types = db.query(UserActionLog.action_type).distinct().all()
+            # Extract values from result tuples
+            return [action_type[0] for action_type in action_types if action_type[0]]
+    except Exception as e:
+        logger.error(f"Error getting unique action types: {str(e)}", exc_info=True)
+        return []
+
+def get_unique_resource_types():
+    """
+    Get a list of unique resource types from the logs
+
+    Returns:
+        list: List of unique resource types
+    """
+    import logging
+    logger = logging.getLogger('certifly')
+
+    try:
+        with get_db() as db:
+            # Use distinct to get unique values
+            resource_types = db.query(UserActionLog.resource_type).distinct().all()
+            # Extract values from result tuples
+            return [resource_type[0] for resource_type in resource_types if resource_type[0]]
+    except Exception as e:
+        logger.error(f"Error getting unique resource types: {str(e)}", exc_info=True)
+        return []
+
 def get_alert_history(limit=50, offset=0):
     """Get alert history with pagination"""
     with get_db() as db:
@@ -843,6 +1234,49 @@ def get_alerts(days=30):
             }
             for alert in alerts
         ]
+
+# User preference functions
+def get_user_preference(user_id, key, default=None):
+    """Get a user preference from the database"""
+    with get_db() as db:
+        preference = db.query(UserPreference).filter(
+            UserPreference.user_id == user_id,
+            UserPreference.key == key
+        ).first()
+
+        if preference and preference.value:
+            # Handle boolean values stored as strings
+            if preference.value == 'True':
+                return True
+            elif preference.value == 'False':
+                return False
+            return preference.value
+        return default
+
+def set_user_preference(user_id, key, value):
+    """Set a user preference in the database"""
+    # Convert boolean to string
+    if isinstance(value, bool):
+        value = str(value)
+
+    with get_db() as db:
+        preference = db.query(UserPreference).filter(
+            UserPreference.user_id == user_id,
+            UserPreference.key == key
+        ).first()
+
+        if preference:
+            preference.value = value
+        else:
+            preference = UserPreference(
+                user_id=user_id,
+                key=key,
+                value=value
+            )
+            db.add(preference)
+
+        db.commit()
+        return True
 
 # Settings functions
 def get_setting(key, default=None):

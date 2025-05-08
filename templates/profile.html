@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/profile_picture.html' import render_profile_picture %}
 
 {% block content %}
 <div class="profile-container">
@@ -97,6 +98,43 @@
         </div>
 
         <div class="col-lg-4">
+            <!-- Profile Image Card -->
+            <div class="modern-card mb-4">
+                <div class="modern-card-header">
+                    <h2 class="modern-card-title">
+                        <i class="bi bi-person-badge"></i>
+                        Profile Image
+                    </h2>
+                </div>
+                <div class="modern-card-body text-center">
+                    <!-- Display current profile image -->
+                    <div class="mb-3">
+                        {% if user.profile_image %}
+                            <img src="{{ url_for('static', filename=user.profile_image) }}?v={{ now }}" alt="Profile Image" class="img-fluid rounded-circle profile-image" style="width: 150px; height: 150px; object-fit: cover;">
+                        {% else %}
+                            <div style="width: 150px; height: 150px; margin: 0 auto;">
+                                {{ render_profile_picture(None, 150, 80) }}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Upload new profile image -->
+                    <form method="POST" action="{{ url_for('upload_profile_image') }}" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="profile_image" class="form-label">Upload New Image</label>
+                            <input type="file" class="form-control" id="profile_image" name="profile_image" accept="image/*" required>
+                            <div class="form-text">
+                                You'll be able to crop and adjust your image after uploading.<br>
+                                Supported formats: PNG, JPG, JPEG, GIF. Max file size: 2MB.
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Upload & Crop Image
+                        </button>
+                    </form>
+                </div>
+            </div>
+
             <!-- Preferences Card -->
             <div class="modern-card mb-4">
                 <div class="modern-card-header">
@@ -107,28 +145,7 @@
                 </div>
                 <div class="modern-card-body">
                     <form method="POST" action="{{ url_for('update_preferences') }}">
-                        <!-- Theme Preference -->
-                        <div class="mb-3">
-                            <label class="form-label">Theme Preference</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="theme_preference" id="theme_system" value="system" {% if user.theme_preference == 'system' or not user.theme_preference %}checked{% endif %}>
-                                <label class="form-check-label" for="theme_system">
-                                    System Default
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="theme_preference" id="theme_light" value="light" {% if user.theme_preference == 'light' %}checked{% endif %}>
-                                <label class="form-check-label" for="theme_light">
-                                    Light Mode
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="theme_preference" id="theme_dark" value="dark" {% if user.theme_preference == 'dark' %}checked{% endif %}>
-                                <label class="form-check-label" for="theme_dark">
-                                    Dark Mode
-                                </label>
-                            </div>
-                        </div>
+                        <!-- Theme preference has been removed - now using only the sun/moon toggle button -->
 
                         <!-- Email Notifications -->
                         <div class="mb-3">
@@ -160,15 +177,19 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Account Created</label>
-                        <p class="mb-0">{{ user.created_at if user.created_at else 'N/A' }}</p>
+                        <p class="mb-0">{{ user.created_at|datetime('%Y-%m-%d %H:%M:%S') if user.created_at else 'N/A' }}</p>
                     </div>
                     <div>
                         <label class="form-label">Last Login</label>
-                        <p class="mb-0">{{ user.last_login if user.last_login else 'N/A' }}</p>
+                        <p class="mb-0">{{ user.last_login|datetime('%Y-%m-%d %H:%M:%S') if user.last_login else 'N/A' }}</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
 {% endblock %}

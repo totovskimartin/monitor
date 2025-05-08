@@ -1,25 +1,4 @@
-// Debounce function to limit how often a function can be called
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-        const context = this;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(context, args), wait);
-    };
-}
-
-// Throttle function to limit how often a function can be called
-function throttle(func, limit) {
-    let inThrottle;
-    return function(...args) {
-        const context = this;
-        if (!inThrottle) {
-            func.apply(context, args);
-            inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
-        }
-    };
-}
+// Using debounce and throttle functions from app.js
 
 // Use requestAnimationFrame for smoother UI updates
 function rafCallback(callback) {
@@ -41,6 +20,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize search functionality
     initializeSearch();
+
+    // Auto-refresh is now initialized in app.js
 
     // Tooltips are now initialized in app.js
 
@@ -99,15 +80,6 @@ function initializeActionButtons() {
                 }
             }
 
-            // Check if this is an anchor tag with href (View Statistics)
-            if (this.tagName === 'A' && this.hasAttribute('href')) {
-                // Allow default navigation behavior for anchor tags
-                return;
-            }
-
-            // Prevent default for buttons
-            e.preventDefault();
-
             // Process buttons with action attribute
             const action = this.dataset.action;
             if (!action) return;
@@ -115,10 +87,20 @@ function initializeActionButtons() {
             const domainId = this.dataset.domainId;
             const domainName = this.closest('tr').querySelector('.domain-name-link').textContent;
 
+            // Check if this is an anchor tag with href (View Statistics)
+            if (this.tagName === 'A' && this.hasAttribute('href') && action === 'view') {
+                // Allow default navigation behavior for anchor tags
+                return; // This allows the browser to follow the href
+            }
+
+            // Prevent default for buttons
+            e.preventDefault();
+
             switch(action) {
                 case 'view':
-                    // Allow default navigation for view action
-                    return;
+                    // If it's not an anchor tag, navigate programmatically
+                    window.location.href = `/domain/${domainId}`;
+                    break;
                 case 'edit':
                     handleEdit(domainId, domainName);
                     break;
@@ -239,19 +221,35 @@ async function handleEdit(domainId, domainName) {
             editButton.innerHTML = '<i class="bi bi-hourglass-split"></i>';
         }
 
-        // Get the domain's current monitoring settings using our API utility
-        const data = await API.get(`/api/domains/${domainId}`);
+        try {
+            // Get the domain's current monitoring settings using our API utility
+            const data = await API.get(`/api/domains/${domainId}`);
 
-        if (data.success) {
+            console.log("API response:", data); // Debug log
+
             // Populate the edit modal with the domain's data
             document.getElementById('editDomainId').value = domainId;
             document.getElementById('editDomainName').value = domainName;
             document.getElementById('originalDomainName').value = domainName;
 
             // Set checkboxes based on current monitoring settings
-            document.getElementById('editMonitorSSL').checked = data.data.monitors.includes('ssl');
-            document.getElementById('editMonitorExpiry').checked = data.data.monitors.includes('expiry');
-            document.getElementById('editMonitorPing').checked = data.data.monitors.includes('ping');
+            if (data && data.domain) {
+                document.getElementById('editMonitorSSL').checked = data.domain.ssl_monitored;
+                document.getElementById('editMonitorExpiry').checked = data.domain.expiry_monitored;
+                document.getElementById('editMonitorPing').checked = data.domain.ping_monitored;
+            } else {
+                // Fallback if API doesn't return expected format
+                console.warn("API response format unexpected:", data);
+                // Set default values based on what we can see in the UI
+                const row = editButton.closest('tr');
+                const hasSSL = row.querySelector('td:nth-child(2)').textContent.trim() !== 'Not monitored';
+                const hasExpiry = row.querySelector('td:nth-child(3)').textContent.trim() !== 'Not monitored';
+                const hasPing = row.querySelector('.ping-indicator') && !row.querySelector('.ping-indicator').classList.contains('ping-unknown');
+
+                document.getElementById('editMonitorSSL').checked = hasSSL;
+                document.getElementById('editMonitorExpiry').checked = hasExpiry;
+                document.getElementById('editMonitorPing').checked = hasPing;
+            }
 
             // Show the modal
             const modal = document.getElementById('editDomainModal');
@@ -261,12 +259,26 @@ async function handleEdit(domainId, domainName) {
             if (modal && modal._bsModal) {
                 modal._bsModal.show();
             }
-        } else {
-            alert(`Failed to get domain details: ${data.error || 'Unknown error'}`);
+        } catch (apiError) {
+            console.error('API Error:', apiError);
+
+            // Fallback approach - just show the modal with the domain name
+            document.getElementById('editDomainId').value = domainId;
+            document.getElementById('editDomainName').value = domainName;
+            document.getElementById('originalDomainName').value = domainName;
+
+            // Show the modal
+            const modal = document.getElementById('editDomainModal');
+            if (modal && !modal._bsModal) {
+                modal._bsModal = new bootstrap.Modal(modal);
+            }
+            if (modal && modal._bsModal) {
+                modal._bsModal.show();
+            }
         }
     } catch (error) {
         console.error('Error:', error);
-        alert(`An error occurred while getting domain details: ${error.message}`);
+        alert(`An error occurred while preparing the edit form: ${error.message}`);
     } finally {
         // Reset button state
         const editButton = document.querySelector(`[data-domain-id="${domainId}"][data-action="edit"]`);
@@ -436,6 +448,8 @@ async function handleRefresh(domainId, _) {
     }
 }
 
+// Using the initializeAutoRefresh function from app.js
+
 function updateDomainRow(row, data) {
     // Update SSL status if available
     if (data.ssl_status) {
@@ -460,10 +474,12 @@ function updateDomainRow(row, data) {
             // Replace the text node
             const textContainer = sslCell.querySelector('div');
             if (textContainer) {
-                // Keep the indicator, replace the text
+                // Keep the indicator, replace the text with proper formatting
                 const newHtml = `
-                    <span class="status-indicator status-indicator-${data.ssl_status.status}"></span>
                     ${statusText}
+                    <i class="bi bi-${data.ssl_status.status === 'valid' ? 'check-circle-fill text-success' :
+                                     data.ssl_status.status === 'warning' ? 'exclamation-triangle-fill text-warning' :
+                                     'x-circle-fill text-danger'} ms-2"></i>
                 `;
                 textContainer.innerHTML = newHtml;
             }

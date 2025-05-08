@@ -1,6 +1,42 @@
+# Core web framework
 Flask>=2.0.0
+Werkzeug>=2.0.0
+Jinja2>=3.0.0
+gunicorn>=20.1.0
+
+# Database
 SQLAlchemy>=1.4.0
-python-dotenv>=0.19.0
+psycopg2-binary>=2.9.3
+alembic>=1.7.0  # For database migrations
+
+# Security and authentication
+Flask-Login>=0.5.0
+Flask-WTF>=1.0.0
+WTForms>=3.0.0
 cryptography>=3.4.0
-requests>=2.26.0
 pyOpenSSL>=20.0.1
+bcrypt>=3.2.0
+
+# Environment and configuration
+python-dotenv>=0.19.0
+pyyaml>=6.0
+
+# HTTP and networking
+requests>=2.26.0
+urllib3>=1.26.0
+dnspython>=2.1.0  # For DNS lookups
+
+# SSL certificate validation
+certifi>=2021.10.8
+pyOpenSSL>=20.0.1
+cryptography>=3.4.0
+
+# Date and time handling
+python-dateutil>=2.8.2
+pytz>=2021.3
+
+# Reporting and exports
+pandas>=1.3.0  # For data manipulation
+openpyxl>=3.0.9  # For Excel export
+XlsxWriter>=3.0.2  # Alternative Excel writer
+reportlab>=3.6.1  # For PDF generation

@@ -1,10 +1,24 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-        {% for category, message in messages %}
-            <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-success{% endif %} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        {% endfor %}
+        <div class="flash-messages-container">
+            {% for category, message in messages %}
+                <div class="modern-alert {% if category == 'error' %}modern-alert-error{% elif category == 'info' %}modern-alert-info{% else %}modern-alert-success{% endif %} fade show" role="alert" data-bs-dismiss="alert">
+                    <div class="modern-alert-icon">
+                        {% if category == 'error' %}
+                        <i class="bi bi-exclamation-circle"></i>
+                        {% elif category == 'info' %}
+                        <i class="bi bi-info-circle"></i>
+                        {% else %}
+                        <i class="bi bi-check-circle"></i>
+                        {% endif %}
+                    </div>
+                    <div class="modern-alert-content">{{ message }}</div>
+                    <button type="button" class="modern-alert-close" data-bs-dismiss="alert" aria-label="Close">
+                        <i class="bi bi-x"></i>
+                    </button>
+                    <div class="alert-loading-bar"></div>
+                </div>
+            {% endfor %}
+        </div>
     {% endif %}
 {% endwith %}

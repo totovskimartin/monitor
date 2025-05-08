@@ -305,4 +305,4 @@ def initialize_auth():
         print("Please change the password after first login!")
 
     # Clear expired sessions
-    db.clear_expired_sessions()
+    db.cleanup_expired_sessions()

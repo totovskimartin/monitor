@@ -34,7 +34,7 @@
             <div class="modern-card-body">
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle me-2"></i>
-                    Configure the notification channels you want to use for monitoring alerts. Enable only the channels you need.
+                    The warning threshold for certificate and domain expiry notifications is configured in the <a href="{{ url_for('app_settings') }}">General Settings</a> page.
                 </div>
 
                 <!-- Notification Channels Accordion -->
@@ -71,13 +71,15 @@
                                             <label for="smtp_server" class="form-label">SMTP Server</label>
                                             <input type="text" class="form-control" id="smtp_server" name="smtp_server"
                                                    value="{{ notifications.email.smtp_server }}"
+                                                   placeholder="smtp.office365.com"
                                                    {% if not notifications.email.enabled %}disabled{% endif %}>
                                         </div>
 
                                         <div class="col-md-6 mb-3">
                                             <label for="smtp_port" class="form-label">SMTP Port</label>
-                                            <input type="number" class="form-control" id="smtp_port" name="smtp_port"
+                                            <input type="text" class="form-control" id="smtp_port" name="smtp_port"
                                                    value="{{ notifications.email.smtp_port }}"
+                                                   placeholder="587"
                                                    {% if not notifications.email.enabled %}disabled{% endif %}>
                                         </div>
                                     </div>
@@ -87,6 +89,7 @@
                                             <label for="smtp_username" class="form-label">SMTP Username</label>
                                             <input type="text" class="form-control" id="smtp_username" name="smtp_username"
                                                    value="{{ notifications.email.smtp_username }}"
+                                                   placeholder="your.email@example.com"
                                                    {% if not notifications.email.enabled %}disabled{% endif %}>
                                         </div>
 
@@ -94,6 +97,7 @@
                                             <label for="smtp_password" class="form-label">SMTP Password</label>
                                             <input type="password" class="form-control" id="smtp_password" name="smtp_password"
                                                    value="{{ notifications.email.smtp_password }}"
+                                                   placeholder="Your email password"
                                                    {% if not notifications.email.enabled %}disabled{% endif %}>
                                             <div class="form-text">Leave blank to keep the existing password</div>
                                         </div>
@@ -103,15 +107,8 @@
                                         <label for="notification_email" class="form-label">Recipient Email</label>
                                         <input type="email" class="form-control" id="notification_email" name="notification_email"
                                                value="{{ notifications.email.notification_email }}"
+                                               placeholder="recipient@example.com"
                                                {% if not notifications.email.enabled %}disabled{% endif %}>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <label for="warning_threshold_days" class="form-label">Warning Threshold (Days)</label>
-                                        <input type="number" class="form-control" id="warning_threshold_days" name="warning_threshold_days"
-                                               value="{{ notifications.email.warning_threshold_days|default(10) }}"
-                                               {% if not notifications.email.enabled %}disabled{% endif %}>
-                                        <div class="form-text">Send notifications when certificates or domains are about to expire within this many days</div>
                                     </div>
 
                                     <div class="d-flex gap-2">
@@ -158,6 +155,7 @@
                                         <label for="teams_webhook_url" class="form-label">Webhook URL</label>
                                         <input type="text" class="form-control" id="teams_webhook_url" name="webhook_url"
                                                value="{{ notifications.teams.webhook_url }}"
+                                               placeholder="https://outlook.office.com/webhook/..."
                                                {% if not notifications.teams.enabled %}disabled{% endif %}>
                                         <div class="form-text">
                                             Enter the webhook URL for your Microsoft Teams channel.
@@ -211,6 +209,7 @@
                                         <label for="slack_webhook_url" class="form-label">Webhook URL</label>
                                         <input type="text" class="form-control" id="slack_webhook_url" name="webhook_url"
                                                value="{{ notifications.slack.webhook_url }}"
+                                               placeholder="https://hooks.slack.com/services/..."
                                                {% if not notifications.slack.enabled %}disabled{% endif %}>
                                         <div class="form-text">
                                             Enter the webhook URL for your Slack channel.
@@ -224,6 +223,7 @@
                                         <label for="slack_channel" class="form-label">Channel (Optional)</label>
                                         <input type="text" class="form-control" id="slack_channel" name="channel"
                                                value="{{ notifications.slack.channel }}"
+                                               placeholder="#alerts"
                                                {% if not notifications.slack.enabled %}disabled{% endif %}>
                                         <div class="form-text">
                                             Enter the channel name (e.g., #alerts). Leave blank to use the webhook's default channel.
@@ -274,6 +274,7 @@
                                         <label for="discord_webhook_url" class="form-label">Webhook URL</label>
                                         <input type="text" class="form-control" id="discord_webhook_url" name="webhook_url"
                                                value="{{ notifications.discord.webhook_url }}"
+                                               placeholder="https://discord.com/api/webhooks/..."
                                                {% if not notifications.discord.enabled %}disabled{% endif %}>
                                         <div class="form-text">
                                             Enter the webhook URL for your Discord channel.
@@ -287,6 +288,7 @@
                                         <label for="discord_username" class="form-label">Bot Username (Optional)</label>
                                         <input type="text" class="form-control" id="discord_username" name="username"
                                                value="{{ notifications.discord.username }}"
+                                               placeholder="Certifly Bot"
                                                {% if not notifications.discord.enabled %}disabled{% endif %}>
                                         <div class="form-text">
                                             Custom username for the webhook bot. Leave blank to use the default.
@@ -299,6 +301,240 @@
                                         </button>
                                         <button type="button" class="btn btn-outline-secondary" onclick="testNotification('discord')" {% if not notifications.discord.enabled %}disabled{% endif %}>
                                             <i class="bi bi-discord me-1"></i> Test Discord Notification
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Telegram Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
+                                    data-bs-target="#telegramCollapse"
+                                    aria-expanded="false"
+                                    aria-controls="telegramCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-telegram me-2"></i>
+                                    <span>Telegram</span>
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
+                                        <input class="form-check-input" type="checkbox" id="telegramEnabled"
+                                               {% if notifications.telegram.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('telegram', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.telegram.enabled else 'Off' }}</span>
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="telegramCollapse" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="telegramForm">
+                                    <input type="hidden" name="notification_type" value="telegram">
+                                    <input type="hidden" name="enabled" value="{% if notifications.telegram.enabled %}true{% else %}false{% endif %}" id="telegramEnabledInput">
+
+                                    <div class="mb-3">
+                                        <label for="telegram_bot_token" class="form-label">Bot Token</label>
+                                        <input type="text" class="form-control" id="telegram_bot_token" name="bot_token"
+                                               value="{{ notifications.telegram.bot_token }}"
+                                               placeholder="1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                               {% if not notifications.telegram.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter your Telegram bot token. You can create a bot using BotFather.
+                                            <a href="https://core.telegram.org/bots#how-do-i-create-a-bot" target="_blank">
+                                                Learn how to create a Telegram bot
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="telegram_chat_id" class="form-label">Chat ID</label>
+                                        <input type="text" class="form-control" id="telegram_chat_id" name="chat_id"
+                                               value="{{ notifications.telegram.chat_id }}"
+                                               placeholder="-1001234567890"
+                                               {% if not notifications.telegram.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter the chat ID where notifications should be sent. This can be a group chat ID or your personal chat ID.
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.telegram.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save Telegram Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('telegram')" {% if not notifications.telegram.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-telegram me-1"></i> Test Telegram Notification
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Webhook Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
+                                    data-bs-target="#webhookCollapse"
+                                    aria-expanded="false"
+                                    aria-controls="webhookCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-link-45deg me-2"></i>
+                                    <span>Custom Webhook</span>
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
+                                        <input class="form-check-input" type="checkbox" id="webhookEnabled"
+                                               {% if notifications.webhook.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('webhook', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.webhook.enabled else 'Off' }}</span>
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="webhookCollapse" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="webhookForm">
+                                    <input type="hidden" name="notification_type" value="webhook">
+                                    <input type="hidden" name="enabled" value="{% if notifications.webhook.enabled %}true{% else %}false{% endif %}" id="webhookEnabledInput">
+
+                                    <div class="mb-3">
+                                        <label for="webhook_url" class="form-label">Webhook URL</label>
+                                        <input type="text" class="form-control" id="webhook_url" name="webhook_url"
+                                               value="{{ notifications.webhook.webhook_url }}"
+                                               placeholder="https://example.com/webhook"
+                                               {% if not notifications.webhook.enabled %}disabled{% endif %}>
+                                        <div class="form-text">
+                                            Enter the URL where webhook notifications should be sent.
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="webhook_format" class="form-label">Format</label>
+                                        <select class="form-select" id="webhook_format" name="format"
+                                                {% if not notifications.webhook.enabled %}disabled{% endif %}>
+                                            <option value="json" {% if notifications.webhook.format == 'json' %}selected{% endif %}>JSON</option>
+                                        </select>
+                                        <div class="form-text">
+                                            Select the format for webhook payloads.
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="webhook_custom_headers" class="form-label">Custom Headers (JSON)</label>
+                                        <textarea class="form-control" id="webhook_custom_headers" name="custom_headers" rows="3"
+                                                  placeholder='{"Authorization": "Bearer token123", "Content-Type": "application/json"}'
+                                                  {% if not notifications.webhook.enabled %}disabled{% endif %}>{{ notifications.webhook.custom_headers }}</textarea>
+                                        <div class="form-text">
+                                            Enter custom headers as a JSON object, e.g., {"Authorization": "Bearer token123"}
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="webhook_custom_fields" class="form-label">Custom Fields (JSON)</label>
+                                        <textarea class="form-control" id="webhook_custom_fields" name="custom_fields" rows="3"
+                                                  placeholder='{"source": "certifly", "priority": "high", "environment": "production"}'
+                                                  {% if not notifications.webhook.enabled %}disabled{% endif %}>{{ notifications.webhook.custom_fields }}</textarea>
+                                        <div class="form-text">
+                                            Enter custom fields to include in the payload as a JSON object, e.g., {"source": "certifly", "priority": "high"}
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.webhook.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save Webhook Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('webhook')" {% if not notifications.webhook.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-link-45deg me-1"></i> Test Webhook
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SMS Notifications -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center"
+                                    type="button"
+                                    data-bs-target="#smsCollapse"
+                                    aria-expanded="false"
+                                    aria-controls="smsCollapse">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-phone me-2"></i>
+                                    <span>SMS (Twilio)</span>
+                                    <div class="form-check form-switch ms-2" onclick="event.stopPropagation();">
+                                        <input class="form-check-input" type="checkbox" id="smsEnabled"
+                                               {% if notifications.sms.enabled %}checked{% endif %}
+                                               onchange="toggleNotificationSection('sms', this.checked);">
+                                        <span class="toggle-label ms-1">{{ 'On' if notifications.sms.enabled else 'Off' }}</span>
+                                    </div>
+                                </div>
+                                <div></div>
+                            </button>
+                        </h2>
+                        <div id="smsCollapse" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                <form action="{{ url_for('save_notifications') }}" method="POST" id="smsForm">
+                                    <input type="hidden" name="notification_type" value="sms">
+                                    <input type="hidden" name="enabled" value="{% if notifications.sms.enabled %}true{% else %}false{% endif %}" id="smsEnabledInput">
+
+                                    <div class="alert alert-info">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        SMS notifications require a Twilio account. The Twilio Python package must be installed on the server.
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="sms_account_sid" class="form-label">Twilio Account SID</label>
+                                            <input type="text" class="form-control" id="sms_account_sid" name="account_sid"
+                                                   value="{{ notifications.sms.account_sid }}"
+                                                   placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                                   {% if not notifications.sms.enabled %}disabled{% endif %}>
+                                        </div>
+
+                                        <div class="col-md-6 mb-3">
+                                            <label for="sms_auth_token" class="form-label">Twilio Auth Token</label>
+                                            <input type="password" class="form-control" id="sms_auth_token" name="auth_token"
+                                                   value="{{ notifications.sms.auth_token }}"
+                                                   placeholder="your_auth_token"
+                                                   {% if not notifications.sms.enabled %}disabled{% endif %}>
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="sms_from_number" class="form-label">From Number</label>
+                                            <input type="text" class="form-control" id="sms_from_number" name="from_number"
+                                                   value="{{ notifications.sms.from_number }}"
+                                                   placeholder="+1234567890"
+                                                   {% if not notifications.sms.enabled %}disabled{% endif %}>
+                                            <div class="form-text">
+                                                Your Twilio phone number in E.164 format (e.g., +1234567890)
+                                            </div>
+                                        </div>
+
+                                        <div class="col-md-6 mb-3">
+                                            <label for="sms_to_number" class="form-label">To Number</label>
+                                            <input type="text" class="form-control" id="sms_to_number" name="to_number"
+                                                   value="{{ notifications.sms.to_number }}"
+                                                   placeholder="+1234567890"
+                                                   {% if not notifications.sms.enabled %}disabled{% endif %}>
+                                            <div class="form-text">
+                                                The recipient's phone number in E.164 format (e.g., +1234567890)
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" {% if not notifications.sms.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-save me-1"></i> Save SMS Settings
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="testNotification('sms')" {% if not notifications.sms.enabled %}disabled{% endif %}>
+                                            <i class="bi bi-phone me-1"></i> Test SMS
                                         </button>
                                     </div>
                                 </form>
@@ -385,6 +621,15 @@
                 break;
             case 'discord':
                 title += 'Discord';
+                break;
+            case 'telegram':
+                title += 'Telegram';
+                break;
+            case 'webhook':
+                title += 'Webhook';
+                break;
+            case 'sms':
+                title += 'SMS';
                 break;
         }
         document.getElementById('testNotificationModalLabel').textContent = title + ' Notification';

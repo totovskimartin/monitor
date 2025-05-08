@@ -31,15 +31,26 @@
                 </thead>
                 <tbody>
                         {% for org in organizations %}
-                        <tr>
+                        <tr class="{% if user.current_organization and user.current_organization.id != org.id %}org-row{% endif %}"
+                            {% if user.current_organization and user.current_organization.id != org.id %}data-org-id="{{ org.id }}" data-org-name="{{ org.name }}"{% endif %}>
                             <td>
                                 <div class="d-flex align-items-center">
                                     <span class="me-2">
                                         <i class="bi bi-building"></i>
                                     </span>
+                                    {% if user.is_admin %}
                                     <a href="{{ url_for('edit_organization', org_id=org.id) }}" class="text-decoration-none">{{ org.name }}</a>
+                                    {% else %}
+                                    <span>{{ org.name }}</span>
+                                    {% endif %}
                                     {% if user.current_organization and user.current_organization.id == org.id %}
                                     <span class="badge bg-primary ms-2">Current</span>
+                                    {% elif user.current_organization and user.current_organization.id != org.id %}
+                                    <button type="button" class="btn btn-sm btn-outline-primary switch-org-btn ms-2"
+                                            data-org-id="{{ org.id }}"
+                                            data-org-name="{{ org.name }}">
+                                        <i class="bi bi-box-arrow-in-right me-1"></i> Switch
+                                    </button>
                                     {% endif %}
                                 </div>
                             </td>
@@ -47,12 +58,6 @@
                             <td>{{ org.created_at|datetime }}</td>
                             <td>
                                 <div class="action-buttons">
-                                    {% if user.current_organization and user.current_organization.id != org.id %}
-                                    <a href="{{ url_for('switch_organization', org_id=org.id) }}" class="action-btn" data-action="switch" title="Switch to this organization">
-                                        <i class="bi bi-box-arrow-in-right"></i>
-                                    </a>
-                                    {% endif %}
-
                                     {% if user.is_admin %}
                                     <a href="{{ url_for('edit_organization', org_id=org.id) }}" class="action-btn" data-action="edit" title="Edit organization">
                                         <i class="bi bi-pencil"></i>
@@ -110,4 +115,76 @@
         </div>
     </div>
 </div>
+
+<!-- Switch Organization Modal -->
+<div class="modal fade" id="switchOrgModal" tabindex="-1" aria-labelledby="switchOrgModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="switchOrgModalLabel">Switch Organization</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to switch to <strong id="switchOrgName"></strong>?</p>
+                <p>You will be redirected to the dashboard with this organization selected.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <a href="#" id="confirmSwitchOrgBtn" class="btn btn-primary">Switch Organization</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript for organization switching -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle switch organization button clicks
+    const switchOrgBtns = document.querySelectorAll('.switch-org-btn');
+    const switchOrgModal = document.getElementById('switchOrgModal');
+    const switchOrgName = document.getElementById('switchOrgName');
+    const confirmSwitchOrgBtn = document.getElementById('confirmSwitchOrgBtn');
+
+    // Initialize the Bootstrap modal
+    const switchModal = new bootstrap.Modal(switchOrgModal);
+
+    // Add click event to all switch buttons
+    switchOrgBtns.forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation(); // Prevent row click
+            const orgId = this.getAttribute('data-org-id');
+            const orgName = this.getAttribute('data-org-name');
+
+            // Set the organization name in the modal
+            switchOrgName.textContent = orgName;
+
+            // Set the confirmation button URL
+            confirmSwitchOrgBtn.href = "{{ url_for('switch_organization', org_id=0) }}".replace('0', orgId);
+
+            // Show the modal
+            switchModal.show();
+        });
+    });
+
+    // Make organization rows clickable
+    const orgRows = document.querySelectorAll('.org-row');
+    orgRows.forEach(row => {
+        row.addEventListener('click', function() {
+            const orgId = this.getAttribute('data-org-id');
+            const orgName = this.getAttribute('data-org-name');
+
+            if (orgId && orgName) {
+                // Set the organization name in the modal
+                switchOrgName.textContent = orgName;
+
+                // Set the confirmation button URL
+                confirmSwitchOrgBtn.href = "{{ url_for('switch_organization', org_id=0) }}".replace('0', orgId);
+
+                // Show the modal
+                switchModal.show();
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

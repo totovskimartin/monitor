@@ -40,8 +40,21 @@
                             <span class="badge bg-primary rounded-pill ms-2">{{ ping_results|length }}</span>
                         </h2>
                         <div class="header-actions">
-                            <div class="search-box">
-                                <input type="text" class="form-control" placeholder="Search hosts...">
+                            <div class="d-flex align-items-center">
+                                <div class="search-box me-2">
+                                    <input type="text" class="form-control" placeholder="Search hosts...">
+                                </div>
+                                <div class="dropdown bulk-actions-dropdown" id="bulkActionsDropdown" style="display: none;">
+                                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi bi-gear"></i> Bulk Actions
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item bulk-action" href="#" data-action="refresh"><i class="bi bi-arrow-repeat me-2"></i>Refresh Selected</a></li>
+                                        <li><a class="dropdown-item bulk-action" href="#" data-action="export"><i class="bi bi-download me-2"></i>Export Selected</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item bulk-action text-danger" href="#" data-action="delete"><i class="bi bi-trash me-2"></i>Delete Selected</a></li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -49,6 +62,11 @@
                         <table class="modern-table">
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;">
+                                        <div class="form-check">
+                                            <input class="form-check-input select-all-checkbox" type="checkbox" id="selectAllHosts">
+                                        </div>
+                                    </th>
                                     <th>Host</th>
                                     <th>Status</th>
                                     <th>Response Time</th>
@@ -58,6 +76,11 @@
                             <tbody>
                                 {% for result in ping_results %}
                                 <tr>
+                                    <td>
+                                        <div class="form-check">
+                                            <input class="form-check-input host-checkbox" type="checkbox" value="{{ result.host }}" data-host="{{ result.host }}">
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="d-flex align-items-center">
                                             <span class="ping-indicator ping-{{ result.status }} me-2" title="Ping status: {{ result.status }}" data-host="{{ result.host }}"></span>
@@ -297,6 +320,122 @@
         const bulkHostsModal = document.getElementById('addBulkHostsModal');
         const bulkHostsSubmit = document.getElementById('bulkHostsSubmit');
         const bulkHostsForm = document.getElementById('bulkHostsForm');
+
+        // Bulk Operations Functionality
+        const selectAllCheckbox = document.getElementById('selectAllHosts');
+        const hostCheckboxes = document.querySelectorAll('.host-checkbox');
+        const bulkActionsDropdown = document.getElementById('bulkActionsDropdown');
+        const bulkActions = document.querySelectorAll('.bulk-action');
+
+        // Function to toggle bulk actions dropdown visibility
+        function updateBulkActionsVisibility() {
+            const checkedBoxes = document.querySelectorAll('.host-checkbox:checked');
+            bulkActionsDropdown.style.display = checkedBoxes.length > 0 ? 'block' : 'none';
+        }
+
+        // Select all checkbox functionality
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                hostCheckboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+                updateBulkActionsVisibility();
+            });
+        }
+
+        // Individual checkbox functionality
+        hostCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // Update "select all" checkbox state
+                if (!this.checked) {
+                    selectAllCheckbox.checked = false;
+                } else {
+                    // Check if all checkboxes are checked
+                    const allChecked = Array.from(hostCheckboxes).every(cb => cb.checked);
+                    selectAllCheckbox.checked = allChecked;
+                }
+                updateBulkActionsVisibility();
+            });
+        });
+
+        // Bulk actions functionality
+        bulkActions.forEach(action => {
+            action.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                const actionType = this.getAttribute('data-action');
+                const selectedHosts = Array.from(document.querySelectorAll('.host-checkbox:checked')).map(cb => cb.value);
+
+                if (selectedHosts.length === 0) {
+                    alert('Please select at least one host.');
+                    return;
+                }
+
+                switch (actionType) {
+                    case 'refresh':
+                        if (confirm(`Refresh ping status for ${selectedHosts.length} selected host(s)?`)) {
+                            // Create a form to submit the selected hosts
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_refresh_ping';
+
+                            // Add selected hosts as hidden inputs
+                            selectedHosts.forEach(host => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'hosts';
+                                input.value = host;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+
+                    case 'export':
+                        // Create a text file with the selected hosts
+                        const hostsText = selectedHosts.join('\n');
+                        const blob = new Blob([hostsText], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+
+                        // Create a download link and trigger it
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'ping_hosts_export.txt';
+                        document.body.appendChild(a);
+                        a.click();
+
+                        // Clean up
+                        setTimeout(() => {
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                        }, 0);
+                        break;
+
+                    case 'delete':
+                        if (confirm(`Are you sure you want to delete ${selectedHosts.length} host(s) from ping monitoring? This action cannot be undone.`)) {
+                            // Create a form to submit the selected hosts
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_delete_ping';
+
+                            // Add selected hosts as hidden inputs
+                            selectedHosts.forEach(host => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'hosts';
+                                input.value = host;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+                }
+            });
+        });
 
         // Fix for modal backdrop issue
         if (addHostModal) {

@@ -47,3 +47,13 @@ logs/
 
 # Data directory
 /data/
+
+# Temporary files
+.DS_Store
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Local configuration
+local_settings.py

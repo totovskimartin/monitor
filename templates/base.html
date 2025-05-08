@@ -1,8 +1,36 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="light">
+<html lang="en">
 <head>
+    <!-- Apply theme immediately to prevent flash -->
+    <script>
+        (function() {
+            // Get theme from localStorage or system preference
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            // Determine initial theme
+            let initialTheme;
+
+            if (savedTheme === 'dark' || savedTheme === 'light') {
+                // Use saved theme if available
+                initialTheme = savedTheme;
+                console.log('Using saved theme from localStorage: ' + initialTheme);
+            } else {
+                // Otherwise use system preference
+                initialTheme = prefersDarkMode ? 'dark' : 'light';
+                console.log('Using system preference theme: ' + initialTheme);
+            }
+
+            // Apply theme to html element immediately
+            document.documentElement.setAttribute('data-bs-theme', initialTheme);
+
+            // Debug info
+            console.log('Theme applied: ' + initialTheme);
+        })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Certifly</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
@@ -17,8 +45,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/timezone-selector.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {% block head_extra %}{% endblock %}
+    {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{{ 'logged-in' if user else '' }}">
     <div class="app-container">
         <!-- Modern Sidebar -->
         <aside class="modern-sidebar">
@@ -119,14 +148,14 @@
 
                 <!-- Settings Section -->
                 <div class="nav-section">
-                    <div class="nav-section-header {% if request.endpoint in ['app_settings', 'notifications', 'user_admin', 'organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags'] %}active{% endif %}" data-bs-toggle="collapse" data-bs-target="#settingsSection">
+                    <div class="nav-section-header {% if request.endpoint in ['app_settings', 'notifications', 'user_admin', 'organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags', 'logs'] %}active{% endif %}" data-bs-toggle="collapse" data-bs-target="#settingsSection">
                         <div class="nav-item-content">
                             <i class="bi bi-gear"></i>
                             <span class="nav-text">Settings</span>
                         </div>
                         <i class="bi bi-chevron-down nav-arrow"></i>
                     </div>
-                    <div class="collapse nav-section-content {% if request.endpoint in ['app_settings', 'notifications', 'user_admin', 'organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags'] %}show{% endif %}" id="settingsSection">
+                    <div class="collapse nav-section-content {% if request.endpoint in ['app_settings', 'notifications', 'user_admin', 'organizations', 'create_organization', 'edit_organization', 'organization_users', 'organization_tags', 'logs'] %}show{% endif %}" id="settingsSection">
                         <a href="{{ url_for('app_settings') }}" class="nav-subitem {% if request.endpoint == 'app_settings' %}active{% endif %}">
                             <div class="nav-subitem-content">
                                 <i class="bi bi-sliders"></i>
@@ -144,6 +173,12 @@
                             <div class="nav-subitem-content">
                                 <i class="bi bi-people"></i>
                                 <span class="nav-text">Users</span>
+                            </div>
+                        </a>
+                        <a href="{{ url_for('logs') }}" class="nav-subitem {% if request.endpoint == 'logs' %}active{% endif %}">
+                            <div class="nav-subitem-content">
+                                <i class="bi bi-journal-text"></i>
+                                <span class="nav-text">Logs</span>
                             </div>
                         </a>
                         {% endif %}
@@ -179,30 +214,14 @@
                             <i class="bi bi-list"></i>
                         </button>
 
-                        <!-- Auto-refresh Control (Only on Dashboard) -->
-                        {% if request.endpoint == 'index' %}
-                        <div class="refresh-control">
-                            <div class="refresh-status">
-                                <div class="refresh-badge">
-                                    <span id="refresh-indicator" class="refresh-indicator paused"></span>
-                                    <span id="refresh-time-display">Off</span>
-                                </div>
-                                <button class="btn btn-sm refresh-settings-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="bi bi-arrow-repeat"></i>
-                                </button>
-                                <div class="dropdown-menu dropdown-menu-end refresh-dropdown">
-                                    <div class="refresh-dropdown-header">
-                                        <span>Auto-refresh</span>
-                                    </div>
-                                    <div class="refresh-options">
-                                        <button class="refresh-option-btn" data-minutes="0">Off</button>
-                                        <button class="refresh-option-btn" data-minutes="1">1m</button>
-                                        <button class="refresh-option-btn" data-minutes="5">5m</button>
-                                        <button class="refresh-option-btn" data-minutes="15">15m</button>
-                                        <button class="refresh-option-btn" data-minutes="30">30m</button>
-                                    </div>
-                                </div>
-                            </div>
+                        <!-- Current Organization Button (Left side) -->
+                        {% if user and user.current_organization %}
+                        <div class="org-selector me-3">
+                            <span class="org-label">Organization:</span>
+                            <a href="{{ url_for('organizations') }}" class="org-button" title="Switch Organization">
+                                <i class="bi bi-building"></i>
+                                <span class="org-name">{{ user.current_organization.name }}</span>
+                            </a>
                         </div>
                         {% endif %}
 
@@ -210,26 +229,29 @@
                         <div class="user-dropdown ms-auto">
                             <div class="dropdown">
                                 <button class="btn btn-link dropdown-toggle user-dropdown-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="bi bi-person-circle"></i>
+                                    {% if user and user.profile_image %}
+                                        <img src="{{ url_for('static', filename=user.profile_image) }}?v={{ now }}" alt="Profile" class="profile-image-small rounded-circle me-1" style="width: 32px; height: 32px; object-fit: cover;">
+                                    {% else %}
+                                        <i class="bi bi-person-circle"></i>
+                                    {% endif %}
                                     {% if user %}
-                                        <span class="user-name">{{ user.username }}</span>
+                                        <span class="user-name">{{ user.display_name if user.display_name else user.username }}</span>
                                     {% else %}
                                         <span class="user-name">Account</span>
                                     {% endif %}
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end">
                                     {% if user %}
-                                        {% if user.current_organization %}
                                         <li>
-                                            <div class="dropdown-item-text">
-                                                <small class="text-muted">Organization:</small><br>
-                                                <span class="fw-bold">{{ user.current_organization.name }}</span>
-                                            </div>
+                                            <a class="dropdown-item" href="{{ url_for('profile') }}">
+                                                {% if user.profile_image %}
+                                                    <img src="{{ url_for('static', filename=user.profile_image) }}?v={{ now }}" alt="Profile" class="rounded-circle me-2" style="width: 24px; height: 24px; object-fit: cover;">
+                                                {% else %}
+                                                    <i class="bi bi-person-circle me-2"></i>
+                                                {% endif %}
+                                                Profile
+                                            </a>
                                         </li>
-                                        <li><a class="dropdown-item" href="{{ url_for('organizations') }}"><i class="bi bi-building me-2"></i> Switch Organization</a></li>
-                                        <li><hr class="dropdown-divider"></li>
-                                        {% endif %}
-                                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle me-2"></i> Profile</a></li>
                                         <li><hr class="dropdown-divider"></li>
                                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right me-2"></i> Logout</a></li>
                                     {% else %}
@@ -250,10 +272,12 @@
                         {% if messages %}
                             <div class="flash-messages-container">
                                 {% for category, message in messages %}
-                                    <div class="modern-alert {% if category == 'error' %}modern-alert-error{% else %}modern-alert-success{% endif %} fade show" role="alert">
+                                    <div class="modern-alert {% if category == 'error' %}modern-alert-error{% elif category == 'info' %}modern-alert-info{% else %}modern-alert-success{% endif %} fade show" role="alert" data-bs-dismiss="alert">
                                         <div class="modern-alert-icon">
                                             {% if category == 'error' %}
                                             <i class="bi bi-exclamation-circle"></i>
+                                            {% elif category == 'info' %}
+                                            <i class="bi bi-info-circle"></i>
                                             {% else %}
                                             <i class="bi bi-check-circle"></i>
                                             {% endif %}
@@ -262,6 +286,7 @@
                                         <button type="button" class="modern-alert-close" data-bs-dismiss="alert" aria-label="Close">
                                             <i class="bi bi-x"></i>
                                         </button>
+                                        <div class="alert-loading-bar"></div>
                                     </div>
                                 {% endfor %}
                             </div>
@@ -286,6 +311,56 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/alerts.js') }}"></script>
+
+    <!-- Global modal backdrop fix -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Function to clean up modal artifacts
+            function cleanupModalArtifacts() {
+                console.log('Cleaning up modal artifacts');
+
+                // Force remove all modal backdrops
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    console.log('Removing backdrop');
+                    backdrop.remove();
+                });
+
+                // Force remove modal-open class and inline styles from body
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            }
+
+            // Handle ESC key to force cleanup modal backdrops
+            document.addEventListener('keydown', function(event) {
+                if (event.key === 'Escape') {
+                    console.log('ESC key pressed');
+                    setTimeout(cleanupModalArtifacts, 100);
+                }
+            });
+
+            // Handle all close buttons
+            document.addEventListener('click', function(event) {
+                if (event.target.matches('[data-bs-dismiss="modal"]') ||
+                    event.target.closest('[data-bs-dismiss="modal"]')) {
+                    console.log('Modal close button clicked');
+                    setTimeout(cleanupModalArtifacts, 300);
+                }
+            });
+
+            // Handle clicks on modal backdrops
+            document.addEventListener('click', function(event) {
+                if (event.target.classList.contains('modal')) {
+                    console.log('Click on modal backdrop detected');
+                    setTimeout(cleanupModalArtifacts, 300);
+                }
+            });
+        });
+    </script>
+
+    {% block scripts %}{% endblock %}
 
     {% if request.endpoint in ['ssl_certificates', 'domain_expiry', 'ping_monitoring'] %}
     <script src="{{ url_for('static', filename='js/monitoring.js') }}"></script>
@@ -313,6 +388,10 @@
 
     {% if request.endpoint == 'app_settings' %}
     <script src="{{ url_for('static', filename='js/timezone-selector.js') }}"></script>
+    {% endif %}
+
+    {% if request.endpoint == 'logs' %}
+    <script src="{{ url_for('static', filename='js/logs.js') }}"></script>
     {% endif %}
 
     <!-- Toast for copy to clipboard -->

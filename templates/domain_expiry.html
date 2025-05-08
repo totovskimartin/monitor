@@ -40,8 +40,21 @@
                             <span class="badge bg-primary rounded-pill ms-2">{{ domains|length }}</span>
                         </h2>
                         <div class="header-actions">
-                            <div class="search-box">
-                                <input type="text" class="form-control" placeholder="Search domains...">
+                            <div class="d-flex align-items-center">
+                                <div class="search-box me-2">
+                                    <input type="text" class="form-control" placeholder="Search domains...">
+                                </div>
+                                <div class="dropdown bulk-actions-dropdown" id="bulkActionsDropdown" style="display: none;">
+                                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi bi-gear"></i> Bulk Actions
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item bulk-action" href="#" data-action="refresh"><i class="bi bi-arrow-repeat me-2"></i>Refresh Selected</a></li>
+                                        <li><a class="dropdown-item bulk-action" href="#" data-action="export"><i class="bi bi-download me-2"></i>Export Selected</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item bulk-action text-danger" href="#" data-action="delete"><i class="bi bi-trash me-2"></i>Delete Selected</a></li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -49,6 +62,11 @@
                         <table class="modern-table">
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;">
+                                        <div class="form-check">
+                                            <input class="form-check-input select-all-checkbox" type="checkbox" id="selectAllDomains">
+                                        </div>
+                                    </th>
                                     <th>Domain</th>
                                     <th>Status</th>
                                     <th>Expiry</th>
@@ -59,6 +77,11 @@
                                 {% for domain in domains %}
                                 <tr>
                                     <td>
+                                        <div class="form-check">
+                                            <input class="form-check-input domain-checkbox" type="checkbox" value="{{ domain.name }}" data-domain="{{ domain.name }}">
+                                        </div>
+                                    </td>
+                                    <td>
                                         <div class="d-flex align-items-center">
                                             <span class="domain-name">{{ domain.name }}</span>
                                             <span class="badge bg-info ms-2" title="Using WHOIS data">WHOIS</span>
@@ -66,17 +89,21 @@
                                     </td>
                                     <td>
                                         <div class="d-flex align-items-center">
-                                            <span class="status-indicator status-indicator-{{ domain.status }}"></span>
                                             {% if domain.status == 'valid' %}
                                                 Valid
+                                                <i class="bi bi-check-circle-fill text-success ms-2"></i>
                                             {% elif domain.status == 'warning' %}
                                                 Warning
+                                                <i class="bi bi-exclamation-triangle-fill text-warning ms-2"></i>
                                             {% elif domain.status == 'expired' %}
                                                 Expired
+                                                <i class="bi bi-x-circle-fill text-danger ms-2"></i>
                                             {% elif domain.status == 'error' %}
                                                 Error
+                                                <i class="bi bi-x-circle-fill text-danger ms-2"></i>
                                             {% else %}
                                                 Unknown
+                                                <i class="bi bi-question-circle-fill text-muted ms-2"></i>
                                             {% endif %}
                                         </div>
                                     </td>
@@ -314,6 +341,122 @@
         const bulkDomainsModal = document.getElementById('addBulkDomainsModal');
         const bulkDomainsSubmit = document.getElementById('bulkDomainsSubmit');
         const bulkDomainsForm = document.getElementById('bulkDomainsForm');
+
+        // Bulk Operations Functionality
+        const selectAllCheckbox = document.getElementById('selectAllDomains');
+        const domainCheckboxes = document.querySelectorAll('.domain-checkbox');
+        const bulkActionsDropdown = document.getElementById('bulkActionsDropdown');
+        const bulkActions = document.querySelectorAll('.bulk-action');
+
+        // Function to toggle bulk actions dropdown visibility
+        function updateBulkActionsVisibility() {
+            const checkedBoxes = document.querySelectorAll('.domain-checkbox:checked');
+            bulkActionsDropdown.style.display = checkedBoxes.length > 0 ? 'block' : 'none';
+        }
+
+        // Select all checkbox functionality
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                domainCheckboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+                updateBulkActionsVisibility();
+            });
+        }
+
+        // Individual checkbox functionality
+        domainCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // Update "select all" checkbox state
+                if (!this.checked) {
+                    selectAllCheckbox.checked = false;
+                } else {
+                    // Check if all checkboxes are checked
+                    const allChecked = Array.from(domainCheckboxes).every(cb => cb.checked);
+                    selectAllCheckbox.checked = allChecked;
+                }
+                updateBulkActionsVisibility();
+            });
+        });
+
+        // Bulk actions functionality
+        bulkActions.forEach(action => {
+            action.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                const actionType = this.getAttribute('data-action');
+                const selectedDomains = Array.from(document.querySelectorAll('.domain-checkbox:checked')).map(cb => cb.value);
+
+                if (selectedDomains.length === 0) {
+                    alert('Please select at least one domain.');
+                    return;
+                }
+
+                switch (actionType) {
+                    case 'refresh':
+                        if (confirm(`Refresh domain expiry information for ${selectedDomains.length} selected domain(s)?`)) {
+                            // Create a form to submit the selected domains
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_refresh_expiry';
+
+                            // Add selected domains as hidden inputs
+                            selectedDomains.forEach(domain => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'domains';
+                                input.value = domain;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+
+                    case 'export':
+                        // Create a text file with the selected domains
+                        const domainsText = selectedDomains.join('\n');
+                        const blob = new Blob([domainsText], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+
+                        // Create a download link and trigger it
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'domain_expiry_export.txt';
+                        document.body.appendChild(a);
+                        a.click();
+
+                        // Clean up
+                        setTimeout(() => {
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                        }, 0);
+                        break;
+
+                    case 'delete':
+                        if (confirm(`Are you sure you want to delete ${selectedDomains.length} domain(s) from expiry monitoring? This action cannot be undone.`)) {
+                            // Create a form to submit the selected domains
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/bulk_delete_expiry';
+
+                            // Add selected domains as hidden inputs
+                            selectedDomains.forEach(domain => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'domains';
+                                input.value = domain;
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                        break;
+                }
+            });
+        });
 
         // Fix for modal backdrop issue
         if (addDomainModal) {

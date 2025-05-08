@@ -9,3 +9,17 @@ venv/
 *.log
 .git
 .gitignore
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.DS_Store
+.idea/
+.vscode/
+data/
+*.db
+*.sqlite3
+README.md
+LICENSE
+tests/
+docs/

@@ -40,6 +40,17 @@
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
             animation: fadeIn 0.3s ease-in-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .modern-alert.fade {
+            transition: opacity 0.6s linear, transform 0.6s ease-out;
+        }
+
+        .modern-alert.fade.hide {
+            opacity: 0;
+            transform: translateY(-10px);
         }
 
         .modern-alert-error {
@@ -84,6 +95,40 @@
             color: #555;
         }
 
+        /* Alert loading bar */
+        .alert-loading-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            width: 0%;
+            background-color: var(--bs-primary, #3498db);
+            animation: alert-loading 5s linear forwards;
+            transform-origin: left;
+        }
+
+        .modern-alert-error .alert-loading-bar {
+            background-color: #e74c3c;
+        }
+
+        .modern-alert-success .alert-loading-bar {
+            background-color: #2ecc71;
+        }
+
+        .modern-alert-info .alert-loading-bar {
+            background-color: #3498db;
+        }
+
+        /* Pause animation when parent alert is hovered */
+        .modern-alert:hover .alert-loading-bar {
+            animation-play-state: paused;
+        }
+
+        @keyframes alert-loading {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -99,7 +144,30 @@
                 <p class="auth-subtitle">SSL Certificate & Domain Monitoring</p>
             </div>
 
-            <!-- Flash messages are now handled in base.html -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-messages-container">
+                        {% for category, message in messages %}
+                            <div class="modern-alert {% if category == 'error' %}modern-alert-error{% elif category == 'info' %}modern-alert-info{% else %}modern-alert-success{% endif %} fade show" role="alert" data-bs-dismiss="alert">
+                                <div class="modern-alert-icon">
+                                    {% if category == 'error' %}
+                                    <i class="bi bi-exclamation-circle"></i>
+                                    {% elif category == 'info' %}
+                                    <i class="bi bi-info-circle"></i>
+                                    {% else %}
+                                    <i class="bi bi-check-circle"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="modern-alert-content">{{ message }}</div>
+                                <button type="button" class="modern-alert-close" data-bs-dismiss="alert" aria-label="Close">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                                <div class="alert-loading-bar"></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
 
             <div class="auth-form">
                 <form action="{{ url_for('login') }}" method="POST">
@@ -153,6 +221,77 @@
                 }
             });
         });
+
+        // Initialize alert functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeAlerts();
+        });
+
+        /**
+         * Initialize alert functionality
+         * - Auto-dismisses alerts after 5 seconds if not hovered
+         */
+        function initializeAlerts() {
+            const alerts = document.querySelectorAll('.modern-alert');
+
+            alerts.forEach(alert => {
+                let dismissTimeout;
+                let isHovered = false;
+
+                // Set timeout to dismiss alert after 5 seconds if not hovered
+                const startDismissTimeout = () => {
+                    dismissTimeout = setTimeout(() => {
+                        if (!isHovered) {
+                            // If not hovered, add the hide class first for our custom animation
+                            alert.classList.add('hide');
+
+                            // Then dismiss the alert after the animation completes
+                            setTimeout(() => {
+                                const bsAlert = new bootstrap.Alert(alert);
+                                bsAlert.close();
+                            }, 600); // Match the transition duration (0.6s)
+                        }
+                    }, 5000); // 5 seconds
+                };
+
+                // Start the initial timeout
+                startDismissTimeout();
+
+                // Add hover event listeners
+                alert.addEventListener('mouseenter', () => {
+                    isHovered = true;
+                    // Clear the dismiss timeout
+                    clearTimeout(dismissTimeout);
+                });
+
+                alert.addEventListener('mouseleave', () => {
+                    isHovered = false;
+                    // Restart the dismiss timeout
+                    startDismissTimeout();
+                });
+
+                // Handle manual close button
+                const closeButton = alert.querySelector('.modern-alert-close');
+                if (closeButton) {
+                    closeButton.addEventListener('click', (e) => {
+                        // Prevent default button behavior
+                        e.preventDefault();
+
+                        // Clear any existing timeout
+                        clearTimeout(dismissTimeout);
+
+                        // Add the hide class for our custom animation
+                        alert.classList.add('hide');
+
+                        // Close the alert after the animation completes
+                        setTimeout(() => {
+                            const bsAlert = new bootstrap.Alert(alert);
+                            bsAlert.close();
+                        }, 600); // Match the transition duration (0.6s)
+                    });
+                }
+            });
+        }
     </script>
 </body>
 </html>

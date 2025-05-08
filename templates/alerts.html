@@ -2,6 +2,38 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/alerts.css') }}">
+<style>
+    /* Bulk operations styles */
+    .timeline-checkbox {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 10px;
+    }
+
+    .timeline-item {
+        display: flex;
+        align-items: flex-start;
+    }
+
+    .bulk-actions {
+        display: flex;
+        align-items: center;
+    }
+
+    @media (max-width: 768px) {
+        .bulk-actions {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+        }
+
+        .bulk-actions .btn {
+            margin-left: 0 !important;
+            margin-top: 5px;
+        }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -49,16 +81,31 @@
                     <!-- Unacknowledged Alerts Section -->
                     {% set has_unacknowledged = false %}
                     <div class="alert-section mb-3" id="unacknowledged-alerts-section">
-                        <h3 class="alert-section-title mb-2">
-                            <i class="bi bi-bell-fill text-danger me-2"></i>
-                            Unacknowledged Alerts
-                            <span class="badge bg-danger ms-2" id="unacknowledged-count">0</span>
-                        </h3>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h3 class="alert-section-title mb-0">
+                                <i class="bi bi-bell-fill text-danger me-2"></i>
+                                Unacknowledged Alerts
+                                <span class="badge bg-danger ms-2" id="unacknowledged-count">0</span>
+                            </h3>
+                            <div class="bulk-actions">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllUnacknowledgedBtn">
+                                    <i class="bi bi-check-square me-1"></i> Select All
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary ms-2" id="bulkAcknowledgeBtn" style="display: none;">
+                                    <i class="bi bi-check-all me-1"></i> Acknowledge Selected
+                                </button>
+                            </div>
+                        </div>
 
                         {% for alert in alerts %}
                             {% if not alert.acknowledged %}
                                 {% set has_unacknowledged = true %}
                                 <div class="timeline-item" data-alert-type="{{ alert.type|lower }}">
+                                    <div class="timeline-checkbox">
+                                        <div class="form-check">
+                                            <input class="form-check-input alert-checkbox" type="checkbox" value="{{ alert.id }}" data-alert-id="{{ alert.id }}">
+                                        </div>
+                                    </div>
                                     <div class="timeline-icon {{ alert.type|lower }}">
                                         <i class="bi bi-{{ alert.icon }}"></i>
                                     </div>
@@ -92,17 +139,33 @@
                                 Acknowledged Alerts
                                 <span class="badge bg-secondary ms-2" id="acknowledged-count">0</span>
                             </h3>
-                            <form action="{{ url_for('delete_all_acknowledged_alerts') }}" method="POST" class="d-inline" id="delete-all-form">
-                                <button type="button" class="btn btn-sm btn-outline-danger" id="delete-all-btn">
-                                    <i class="bi bi-trash me-1"></i> Delete All
+                            <div class="bulk-actions">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllAcknowledgedBtn">
+                                    <i class="bi bi-check-square me-1"></i> Select All
                                 </button>
-                            </form>
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="bulkUnacknowledgeBtn" style="display: none;">
+                                    <i class="bi bi-x-circle me-1"></i> Unacknowledge Selected
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger ms-2" id="bulkDeleteBtn" style="display: none;">
+                                    <i class="bi bi-trash me-1"></i> Delete Selected
+                                </button>
+                                <form action="{{ url_for('delete_all_acknowledged_alerts') }}" method="POST" class="d-inline ms-2" id="delete-all-form">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" id="delete-all-btn">
+                                        <i class="bi bi-trash me-1"></i> Delete All
+                                    </button>
+                                </form>
+                            </div>
                         </div>
 
                         {% for alert in alerts %}
                             {% if alert.acknowledged %}
                                 {% set has_acknowledged = true %}
                                 <div class="timeline-item acknowledged" data-alert-type="{{ alert.type|lower }}">
+                                    <div class="timeline-checkbox">
+                                        <div class="form-check">
+                                            <input class="form-check-input acknowledged-alert-checkbox" type="checkbox" value="{{ alert.id }}" data-alert-id="{{ alert.id }}">
+                                        </div>
+                                    </div>
                                     <div class="timeline-icon {{ alert.type|lower }}">
                                         <i class="bi bi-{{ alert.icon }}"></i>
                                     </div>
@@ -199,6 +262,164 @@
         const alertItems = document.querySelectorAll('.timeline-item');
         const alertSections = document.querySelectorAll('.alert-section');
 
+        // Bulk operations elements
+        const selectAllUnacknowledgedBtn = document.getElementById('selectAllUnacknowledgedBtn');
+        const selectAllAcknowledgedBtn = document.getElementById('selectAllAcknowledgedBtn');
+        const bulkAcknowledgeBtn = document.getElementById('bulkAcknowledgeBtn');
+        const bulkUnacknowledgeBtn = document.getElementById('bulkUnacknowledgeBtn');
+        const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+        const alertCheckboxes = document.querySelectorAll('.alert-checkbox');
+        const acknowledgedAlertCheckboxes = document.querySelectorAll('.acknowledged-alert-checkbox');
+
+        // Function to update bulk action buttons visibility
+        function updateBulkActionButtons() {
+            // For unacknowledged alerts
+            const checkedUnacknowledged = document.querySelectorAll('.alert-checkbox:checked').length;
+            bulkAcknowledgeBtn.style.display = checkedUnacknowledged > 0 ? 'inline-block' : 'none';
+
+            // For acknowledged alerts
+            const checkedAcknowledged = document.querySelectorAll('.acknowledged-alert-checkbox:checked').length;
+            bulkUnacknowledgeBtn.style.display = checkedAcknowledged > 0 ? 'inline-block' : 'none';
+            bulkDeleteBtn.style.display = checkedAcknowledged > 0 ? 'inline-block' : 'none';
+        }
+
+        // Select all unacknowledged alerts
+        if (selectAllUnacknowledgedBtn) {
+            selectAllUnacknowledgedBtn.addEventListener('click', function() {
+                const isSelectAll = !this.classList.contains('active');
+                this.classList.toggle('active');
+                this.innerHTML = isSelectAll ?
+                    '<i class="bi bi-square me-1"></i> Deselect All' :
+                    '<i class="bi bi-check-square me-1"></i> Select All';
+
+                alertCheckboxes.forEach(checkbox => {
+                    checkbox.checked = isSelectAll;
+                });
+
+                updateBulkActionButtons();
+            });
+        }
+
+        // Select all acknowledged alerts
+        if (selectAllAcknowledgedBtn) {
+            selectAllAcknowledgedBtn.addEventListener('click', function() {
+                const isSelectAll = !this.classList.contains('active');
+                this.classList.toggle('active');
+                this.innerHTML = isSelectAll ?
+                    '<i class="bi bi-square me-1"></i> Deselect All' :
+                    '<i class="bi bi-check-square me-1"></i> Select All';
+
+                acknowledgedAlertCheckboxes.forEach(checkbox => {
+                    checkbox.checked = isSelectAll;
+                });
+
+                updateBulkActionButtons();
+            });
+        }
+
+        // Individual checkbox change events
+        alertCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateBulkActionButtons);
+        });
+
+        acknowledgedAlertCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateBulkActionButtons);
+        });
+
+        // Bulk acknowledge button
+        if (bulkAcknowledgeBtn) {
+            bulkAcknowledgeBtn.addEventListener('click', function() {
+                const selectedAlerts = Array.from(document.querySelectorAll('.alert-checkbox:checked')).map(cb => cb.value);
+
+                if (selectedAlerts.length === 0) {
+                    alert('Please select at least one alert to acknowledge.');
+                    return;
+                }
+
+                if (confirm(`Are you sure you want to acknowledge ${selectedAlerts.length} selected alert(s)?`)) {
+                    // Create a form to submit all at once
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '{{ url_for("bulk_acknowledge_alerts") }}';
+
+                    // Add all selected alert IDs as hidden inputs
+                    selectedAlerts.forEach(alertId => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'alert_ids';
+                        input.value = alertId;
+                        form.appendChild(input);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+        }
+
+        // Bulk unacknowledge button
+        if (bulkUnacknowledgeBtn) {
+            bulkUnacknowledgeBtn.addEventListener('click', function() {
+                const selectedAlerts = Array.from(document.querySelectorAll('.acknowledged-alert-checkbox:checked')).map(cb => cb.value);
+
+                if (selectedAlerts.length === 0) {
+                    alert('Please select at least one alert to unacknowledge.');
+                    return;
+                }
+
+                if (confirm(`Are you sure you want to unacknowledge ${selectedAlerts.length} selected alert(s)?`)) {
+                    // Create a form to submit all at once
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '{{ url_for("bulk_unacknowledge_alerts") }}';
+
+                    // Add all selected alert IDs as hidden inputs
+                    selectedAlerts.forEach(alertId => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'alert_ids';
+                        input.value = alertId;
+                        form.appendChild(input);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+        }
+
+        // Bulk delete button
+        if (bulkDeleteBtn) {
+            bulkDeleteBtn.addEventListener('click', function() {
+                const selectedAlerts = Array.from(document.querySelectorAll('.acknowledged-alert-checkbox:checked')).map(cb => cb.value);
+
+                if (selectedAlerts.length === 0) {
+                    alert('Please select at least one alert to delete.');
+                    return;
+                }
+
+                if (confirm(`Are you sure you want to delete ${selectedAlerts.length} selected alert(s)? This action cannot be undone.`)) {
+                    // Create a form to submit all at once
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '{{ url_for("bulk_delete_alerts") }}';
+
+                    // Add all selected alert IDs as hidden inputs
+                    selectedAlerts.forEach(alertId => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'alert_ids';
+                        input.value = alertId;
+                        form.appendChild(input);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+        }
+
+        // Alert filtering functionality
         filterLinks.forEach(link => {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -267,44 +488,42 @@
                         noFilterMatchMessage.style.display = 'none';
                     }
                 }
+
+                // Reset checkboxes when filtering
+                document.querySelectorAll('.form-check-input').forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+
+                // Reset select all buttons
+                if (selectAllUnacknowledgedBtn) {
+                    selectAllUnacknowledgedBtn.classList.remove('active');
+                    selectAllUnacknowledgedBtn.innerHTML = '<i class="bi bi-check-square me-1"></i> Select All';
+                }
+
+                if (selectAllAcknowledgedBtn) {
+                    selectAllAcknowledgedBtn.classList.remove('active');
+                    selectAllAcknowledgedBtn.innerHTML = '<i class="bi bi-check-square me-1"></i> Select All';
+                }
+
+                // Update bulk action buttons
+                updateBulkActionButtons();
             });
         });
 
-        // Add button to acknowledge all visible alerts
-        const headerActions = document.querySelector('.header-actions');
-        if (headerActions && document.querySelectorAll('.timeline-item:not(.acknowledged)').length > 0) {
-            const acknowledgeAllBtn = document.createElement('button');
-            acknowledgeAllBtn.className = 'btn btn-sm btn-outline-primary';
-            acknowledgeAllBtn.innerHTML = '<i class="bi bi-check-all"></i> Acknowledge All';
-            acknowledgeAllBtn.addEventListener('click', function() {
-                if (confirm('Are you sure you want to acknowledge all visible alerts?')) {
-                    // Submit all visible unacknowledged alerts
-                    const visibleUnacknowledgedAlerts = document.querySelectorAll('#unacknowledged-alerts-section .timeline-item:not([style*="display: none"])');
-                    if (visibleUnacknowledgedAlerts.length > 0) {
-                        // Create a form to submit all at once
-                        const form = document.createElement('form');
-                        form.method = 'POST';
-                        form.action = '{{ url_for("acknowledge_all_alerts") }}';
+        // Delete all acknowledged alerts button
+        const deleteAllBtn = document.getElementById('delete-all-btn');
+        if (deleteAllBtn) {
+            deleteAllBtn.addEventListener('click', function() {
+                const acknowledgedItems = document.querySelectorAll('#acknowledged-alerts-section .timeline-item').length;
+                if (acknowledgedItems === 0) {
+                    alert('There are no acknowledged alerts to delete.');
+                    return;
+                }
 
-                        // Add all visible alert IDs as hidden inputs
-                        visibleUnacknowledgedAlerts.forEach(alert => {
-                            const acknowledgeBtn = alert.querySelector('form[action*="acknowledge_alert"] button');
-                            if (acknowledgeBtn) {
-                                const alertId = acknowledgeBtn.closest('form').action.split('/').pop();
-                                const input = document.createElement('input');
-                                input.type = 'hidden';
-                                input.name = 'alert_ids';
-                                input.value = alertId;
-                                form.appendChild(input);
-                            }
-                        });
-
-                        document.body.appendChild(form);
-                        form.submit();
-                    }
+                if (confirm(`Are you sure you want to delete all ${acknowledgedItems} acknowledged alerts? This action cannot be undone.`)) {
+                    document.getElementById('delete-all-form').submit();
                 }
             });
-            headerActions.appendChild(acknowledgeAllBtn);
         }
     });
 </script>
