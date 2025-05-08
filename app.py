@@ -356,6 +356,10 @@ from database import get_user_preference, set_user_preference
 app = Flask(__name__, static_folder='static')
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 
+# Initialize authentication system and create default admin user if needed
+auth.initialize_auth()
+logger.info("Authentication system initialized")
+
 # CSRF token generation
 def generate_csrf_token():
     if '_csrf_token' not in session:
@@ -9517,19 +9521,6 @@ def start_background_tasks():
     ping_thread = threading.Thread(target=run_periodic_ping_checks, daemon=True)
     ping_thread.start()
     logger.info("Background tasks started")
-
-# Initialize database and auth on application startup
-@app.before_first_request
-def initialize_app():
-    # Initialize database
-    db.init_db()
-    
-    # Initialize authentication system (create default admin user if needed)
-    try:
-        auth.initialize_auth()
-        logger.info("Authentication system initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing authentication system: {str(e)}", exc_info=True)
 
 if __name__ == '__main__':
     # Start background tasks
