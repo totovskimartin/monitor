@@ -11,6 +11,10 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    # Add permissions block here
+    permissions:
+      security-events: write
+      contents: read
     steps:
       - uses: actions/checkout@v3
       
