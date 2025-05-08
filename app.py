@@ -8920,7 +8920,12 @@ def crop_profile_image(filename):
 
     # Check if the temporary file exists
     import os
-    temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'temp', filename)
+    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'temp')
+    temp_path = os.path.normpath(os.path.join(base_path, filename))
+    if not temp_path.startswith(base_path):
+        logger.error(f"Invalid file path: {temp_path}")
+        flash("Error: Invalid file path.", "error")
+        return redirect(url_for('profile'))
     if os.path.exists(temp_path):
         logger.info(f"Temporary file exists at: {temp_path}")
     else:
