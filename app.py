@@ -5520,9 +5520,12 @@ def clear_ssl_cache(domain):
     # Redirect back to the referring page or to the SSL certificates page
     referrer = request.referrer
     if referrer:
-        return redirect(referrer)
-    else:
-        return redirect(url_for('ssl_certificates'))
+        from urllib.parse import urlparse
+        parsed_url = urlparse(referrer)
+        # Allow only relative URLs or URLs from trusted domains
+        if not parsed_url.netloc or parsed_url.netloc.endswith('yourtrustedomain.com'):
+            return redirect(referrer)
+    return redirect(url_for('ssl_certificates'))
 
 @app.route('/clear_all_ssl_cache')
 @auth.login_required
