@@ -301,7 +301,7 @@ def initialize_auth():
     """Initialize authentication system"""
     # Create default admin if no users exist
     if create_default_admin():
-        print(f"Created default admin user: {DEFAULT_ADMIN_USERNAME} / {DEFAULT_ADMIN_PASSWORD}")
+        print(f"Created default admin user: {DEFAULT_ADMIN_USERNAME}. Please change the password after first login!")
         print("Please change the password after first login!")
 
     # Clear expired sessions
