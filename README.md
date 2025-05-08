@@ -24,7 +24,7 @@ A modern web application for monitoring SSL certificates, domain expiration, and
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/totovskimartin/monitor.git
+   git clone https://github.com/totovskimartin/certifly.git
    cd certifly
    ```
 
