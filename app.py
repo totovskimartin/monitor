@@ -8034,7 +8034,13 @@ def switch_organization(org_id):
     else:
         flash("You don't have access to this organization", 'error')
 
-    return redirect(request.referrer or url_for('index'))
+    from urllib.parse import urlparse
+    referrer = request.referrer
+    if referrer:
+        parsed_url = urlparse(referrer)
+        if parsed_url.netloc != request.host:
+            referrer = None
+    return redirect(referrer or url_for('index'))
 
 @app.route('/organizations/create', methods=['GET', 'POST'])
 @auth.admin_required
