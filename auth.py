@@ -12,7 +12,7 @@ SESSION_EXPIRY = 86400 * 7  # 7 days in seconds
 PASSWORD_SALT_LENGTH = 16
 DEFAULT_ADMIN_USERNAME = 'admin'
 DEFAULT_ADMIN_EMAIL = 'admin@example.com'
-DEFAULT_ADMIN_PASSWORD = 'admin'  # This should be changed after first login
+DEFAULT_ADMIN_PASSWORD = os.environ.get('INITIAL_ADMIN_PASSWORD', 'admin')  # Get from env or use default
 
 def hash_password(password, salt=None):
     """

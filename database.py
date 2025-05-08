@@ -1550,3 +1550,15 @@ def record_ping_status(domain_name, status, response_time):
 def init_db():
     """Initialize the database by creating all tables"""
     Base.metadata.create_all(bind=engine)
+
+def check_connection():
+    """Check if database connection is working"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Database connection check failed: {str(e)}")
+        return False

@@ -5,8 +5,8 @@ WORKDIR /app
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
-    gcc \
-    python3-dev \
+    curl \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
@@ -31,6 +31,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy wheels from builder stage
@@ -40,11 +41,14 @@ RUN pip install --no-cache /wheels/*
 # Create data directory with proper permissions
 RUN mkdir -p /data && chown -R appuser:appuser /data
 
+# Create logs directory with proper permissions
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
+
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Make run script executable
-RUN chmod +x /app/run.sh
+# Make scripts executable
+RUN chmod +x /app/run.sh /app/init-db.sh
 
 # Switch to non-root user
 USER appuser

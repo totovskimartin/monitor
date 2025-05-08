@@ -9518,10 +9518,12 @@ def start_background_tasks():
     ping_thread.start()
     logger.info("Background tasks started")
 
-if __name__ == '__main__':
+# Initialize database and auth on application startup
+@app.before_first_request
+def initialize_app():
     # Initialize database
     db.init_db()
-
+    
     # Initialize authentication system (create default admin user if needed)
     try:
         auth.initialize_auth()
@@ -9529,6 +9531,7 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"Error initializing authentication system: {str(e)}", exc_info=True)
 
+if __name__ == '__main__':
     # Start background tasks
     start_background_tasks()
 
