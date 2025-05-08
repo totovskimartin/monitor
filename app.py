@@ -123,12 +123,14 @@ def cache_ping_data(domain, ping_result):
 
 def check_ping(domain):
     """Check if a domain is reachable via ping and return status and response time with caching"""
-    # Default response for errors
-    default_down_response = {
-        "status": "down",
-        "response_time": 0.0,
-        "last_checked": datetime.now()
-    }
+    # Validate the domain
+    if not validate_domain(domain):
+        logger.error(f"Invalid domain: {domain}")
+        return {
+            "status": "down",
+            "response_time": 0.0,
+            "last_checked": datetime.now()
+        }
 
     default_unknown_response = {
         "status": "unknown",
@@ -202,6 +204,7 @@ def check_ping(domain):
 
         # Use a short timeout and only 1 packet with explicit timeout parameter
         command = ['ping', param, '1', timeout_param, timeout_value, domain]
+        logger.debug(f"Validated domain for ping command: {domain}")
 
         logger.debug(f"Running ping command: {' '.join(command)}")
 
@@ -1941,6 +1944,19 @@ def check_certificate(domain: str) -> CertificateStatus:
         cache_ssl_data(domain, error_status)
 
         return error_status
+
+def validate_domain(domain):
+    """Validate that the domain is a valid hostname or IP address."""
+    # Regex for validating a hostname or IP address
+    hostname_regex = r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$"
+    ip_regex = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+    
+    # Split domain into labels for hostname validation
+    if re.match(ip_regex, domain):
+        return True  # Valid IP address
+    elif all(re.match(hostname_regex, label) for label in domain.split(".")):
+        return True  # Valid hostname
+    return False  # Invalid domain
 
 def clean_domain_name(domain):
     """Clean a domain name by removing protocol, trailing slashes, and paths"""
