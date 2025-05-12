@@ -123,6 +123,17 @@ def cache_ping_data(domain, ping_result):
 
 def check_ping(domain):
     """Check if a domain is reachable via ping and return status and response time with caching"""
+    # Validate the domain
+    try:
+        domain = validate_domain(domain)
+    except ValueError as e:
+        logger.error(str(e))
+        return {
+            "status": "invalid",
+            "response_time": 0.0,
+            "last_checked": datetime.now()
+        }
+
     # Default response for errors
     default_down_response = {
         "status": "down",
@@ -1725,8 +1736,10 @@ def check_certificate(domain: str) -> CertificateStatus:
 
         # Create a context with default verification options
         context = ssl.create_default_context()
+        # Set minimum TLS version to TLSv1.2 for security
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
 
-        logger.info(f"Created SSL context for {domain}")
+        logger.info(f"Created SSL context for {domain} with minimum TLS version set to TLSv1.2")
 
         # Connect to the server with a shorter timeout (2 seconds instead of 5)
         logger.info(f"Attempting to connect to {domain}:443 with 2 second timeout")
@@ -1942,7 +1955,15 @@ def check_certificate(domain: str) -> CertificateStatus:
 
         return error_status
 
-def clean_domain_name(domain):
+def validate_domain(domain):
+    """Validate that the domain is a valid domain name or IP address."""
+    domain_regex = re.compile(
+        r"^(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}$"  # Domain name
+        r"|^(?:\d{1,3}\.){3}\d{1,3}$"  # IPv4 address
+    )
+    if not domain_regex.match(domain):
+        raise ValueError(f"Invalid domain: {domain}")
+    return domain
     """Clean a domain name by removing protocol, trailing slashes, and paths"""
     if not domain:
         return ""
@@ -4011,6 +4032,14 @@ def remove_ssl_domain(domain):
 def refresh_ssl_certificate(domain):
     """Refresh SSL certificate data for a specific domain"""
     try:
+        domain = validate_domain(domain)
+    except ValueError as e:
+        logger.error(str(e))
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
+    try:
         cert_status = check_certificate(domain)
         return jsonify({
             'success': True,
@@ -5520,9 +5549,15 @@ def clear_ssl_cache(domain):
     # Redirect back to the referring page or to the SSL certificates page
     referrer = request.referrer
     if referrer:
-        return redirect(referrer)
-    else:
-        return redirect(url_for('ssl_certificates'))
+        from urllib.parse import urlparse
+        referrer = referrer.replace('\\', '/')
+        parsed_url = urlparse(referrer)
+        # Define a list of trusted domains
+        trusted_domains = ['yourtrustedomain.com']
+        # Allow only relative URLs or URLs from trusted domains
+        if not parsed_url.netloc or parsed_url.netloc in trusted_domains:
+            return redirect(referrer)
+    return redirect(url_for('ssl_certificates'))
 
 @app.route('/clear_all_ssl_cache')
 @auth.login_required
@@ -8034,7 +8069,13 @@ def switch_organization(org_id):
     else:
         flash("You don't have access to this organization", 'error')
 
-    return redirect(request.referrer or url_for('index'))
+    from urllib.parse import urlparse
+    referrer = request.referrer
+    if referrer:
+        parsed_url = urlparse(referrer)
+        if parsed_url.netloc != request.host:
+            referrer = None
+    return redirect(referrer or url_for('index'))
 
 @app.route('/organizations/create', methods=['GET', 'POST'])
 @auth.admin_required
@@ -8920,7 +8961,12 @@ def crop_profile_image(filename):
 
     # Check if the temporary file exists
     import os
-    temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'temp', filename)
+    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'temp')
+    temp_path = os.path.normpath(os.path.join(base_path, filename))
+    if not temp_path.startswith(base_path):
+        logger.error(f"Invalid file path: {temp_path}")
+        flash("Error: Invalid file path.", "error")
+        return redirect(url_for('profile'))
     if os.path.exists(temp_path):
         logger.info(f"Temporary file exists at: {temp_path}")
     else:
@@ -8982,7 +9028,19 @@ def save_cropped_image():
         db.update_user_profile_image(current_user['id'], filename)
 
         # Delete the temporary file
-        temp_path = os.path.join(current_dir, 'static', 'temp', temp_filename)
+        # Define the base directory for temporary files
+        temp_base_dir = os.path.join(current_dir, 'static', 'temp')
+
+        # Normalize and validate the temp_filename
+        temp_filename = os.path.normpath(temp_filename)
+        if not temp_filename or temp_filename.startswith("..") or os.path.isabs(temp_filename):
+            raise ValueError("Invalid filename")
+
+        # Construct the full path and ensure it is within the base directory
+        temp_path = os.path.join(temp_base_dir, temp_filename)
+        if not temp_path.startswith(temp_base_dir):
+            raise ValueError("Invalid file path")
+
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
@@ -10223,13 +10281,33 @@ if __name__ == '__main__':
     start_background_tasks()
 
     # Start the application
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('HOST', '0.0.0.0')
+
     if os.getenv('FLASK_ENV') == 'production':
-        # Production settings
+        # Production settings - never use debug mode
         try:
             from waitress import serve
-            serve(app, host='0.0.0.0', port=5000)
+            logger.info(f"Starting production server with Waitress on {host}:{port}")
+            serve(app, host=host, port=port)
         except ImportError:
+
             app.run(host='0.0.0.0', port=5000)
     else:
         # Development settings
         app.run(host='127.0.0.1', port=5000)
+
+            logger.info(f"Waitress not installed, using Flask production server on {host}:{port}")
+            app.run(host='0.0.0.0', port=5000)
+    else:
+        # Development settings - only use debug mode in a controlled local environment
+        # Debug mode should NEVER be enabled on a publicly accessible server
+        debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+
+        if debug_mode:
+            logger.warning("Running with debug=True. This should NEVER be used in production environments!")
+            app.run(host='127.0.0.1', port=5000)
+        else:
+            logger.info(f"Starting development server without debug mode on {host}:{port}")
+            app.run(debug=False, host=host, port=port)
+
