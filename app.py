@@ -9028,7 +9028,19 @@ def save_cropped_image():
         db.update_user_profile_image(current_user['id'], filename)
 
         # Delete the temporary file
-        temp_path = os.path.join(current_dir, 'static', 'temp', temp_filename)
+        # Define the base directory for temporary files
+        temp_base_dir = os.path.join(current_dir, 'static', 'temp')
+
+        # Normalize and validate the temp_filename
+        temp_filename = os.path.normpath(temp_filename)
+        if not temp_filename or temp_filename.startswith("..") or os.path.isabs(temp_filename):
+            raise ValueError("Invalid filename")
+
+        # Construct the full path and ensure it is within the base directory
+        temp_path = os.path.join(temp_base_dir, temp_filename)
+        if not temp_path.startswith(temp_base_dir):
+            raise ValueError("Invalid file path")
+
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
