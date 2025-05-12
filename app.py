@@ -10291,8 +10291,14 @@ if __name__ == '__main__':
             logger.info(f"Starting production server with Waitress on {host}:{port}")
             serve(app, host=host, port=port)
         except ImportError:
+
+            app.run(host='0.0.0.0', port=5000)
+    else:
+        # Development settings
+        app.run(host='127.0.0.1', port=5000)
+
             logger.info(f"Waitress not installed, using Flask production server on {host}:{port}")
-            app.run(debug=False, host=host, port=port)
+            app.run(host='0.0.0.0', port=5000)
     else:
         # Development settings - only use debug mode in a controlled local environment
         # Debug mode should NEVER be enabled on a publicly accessible server
@@ -10300,7 +10306,8 @@ if __name__ == '__main__':
 
         if debug_mode:
             logger.warning("Running with debug=True. This should NEVER be used in production environments!")
-            app.run(debug=True, host=host, port=port)
+            app.run(host='127.0.0.1', port=5000)
         else:
             logger.info(f"Starting development server without debug mode on {host}:{port}")
             app.run(debug=False, host=host, port=port)
+
