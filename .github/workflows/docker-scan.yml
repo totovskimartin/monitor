@@ -16,7 +16,7 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Build Docker image
         run: |
